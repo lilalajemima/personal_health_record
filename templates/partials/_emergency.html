@@ -1,0 +1,203 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="grid gap-6 md:grid-cols-3">
+    <!-- Emergency Notes Card -->
+    <div class="md:col-span-2 bg-white rounded-lg shadow p-6">
+        <div class="flex items-center gap-2 mb-4">
+            <svg class="h-6 w-6 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+            <h2 class="text-2xl font-bold">Emergency Notes</h2>
+        </div>
+        <p class="text-gray-500 mb-6">This critical information can be shared with family or caregivers.</p>
+        
+        <form method="POST" class="space-y-4">
+            <div>
+                <label for="bloodType" class="block text-sm font-medium text-gray-700 mb-1">Blood Type & Medical Conditions</label>
+                <textarea
+                    id="bloodType"
+                    name="bloodType"
+                    class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+                    rows="4"
+                    placeholder="e.g., O+, Known medical conditions..."
+                >Blood Type: {{ notes.blood_type or '' }}
+Conditions: {{ notes.medical_conditions or '' }}</textarea>
+            </div>
+            
+            <div>
+                <label for="allergies" class="block text-sm font-medium text-gray-700 mb-1">Allergies</label>
+                <textarea
+                    id="allergies"
+                    name="allergies"
+                    class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+                    rows="3"
+                    placeholder="e.g., Penicillin (hives, rash)"
+                >{{ notes.allergies or '' }}</textarea>
+            </div>
+            
+            <div>
+                <label for="contacts" class="block text-sm font-medium text-gray-700 mb-1">Emergency Contacts</label>
+                <textarea
+                    id="contacts"
+                    name="contacts"
+                    class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+                    rows="4"
+                    placeholder="e.g., Dr. Evelyn Reed (GP) - 555-0101"
+                >{{ notes.emergency_contacts or '' }}</textarea>
+            </div>
+            
+            <hr class="my-6">
+            
+            <div>
+                <div class="flex items-center gap-2 mb-2">
+                    <svg class="h-5 w-5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    <h4 class="text-lg font-medium">Attachments</h4>
+                </div>
+                <p class="text-gray-500 mb-4">Upload important documents like medical directives or insurance cards.</p>
+                
+                <div class="flex flex-col gap-4">
+                    <form action="{{ url_for('upload_emergency_file') }}" method="POST" enctype="multipart/form-data" class="w-fit">
+                        <input type="file" name="file" id="emergency-file-upload" class="hidden" onchange="this.form.submit()">
+                        <label for="emergency-file-upload" class="cursor-pointer inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">
+                            <svg class="mr-2 h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                            </svg>
+                            Upload File
+                        </label>
+                    </form>
+                    
+                    <div class="space-y-2">
+                        {% for file in emergency_files %}
+                        <div class="flex items-center justify-between p-2 rounded-md border bg-gray-50">
+                            <span class="text-sm font-medium">{{ file.filename }}</span>
+                            <a href="{{ url_for('delete_emergency_file', file_id=file._id) }}" class="text-red-500 hover:text-red-700 p-1">
+                                <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                </svg>
+                            </a>
+                        </div>
+                        {% else %}
+                        <p class="text-sm text-gray-500 pt-2">No files attached.</p>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+            
+            <button type="submit" class="mt-4 inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                <svg class="mr-2 h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+                </svg>
+                Save Notes
+            </button>
+        </form>
+    </div>
+    
+    <!-- Family Access Card -->
+    <div class="bg-white rounded-lg shadow p-6">
+        <div class="flex items-center gap-2 mb-4">
+            <svg class="h-6 w-6 text-indigo-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+            </svg>
+            <h2 class="text-2xl font-bold">Family Access</h2>
+        </div>
+        <p class="text-gray-500 mb-6">Grant view-only access to your emergency notes.</p>
+        
+        <button onclick="document.getElementById('invite-dialog').showModal()" class="w-full inline-flex items-center justify-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 mb-6">
+            <svg class="mr-2 h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
+            </svg>
+            Invite Family Member
+        </button>
+        
+        <hr class="my-4">
+        
+        <div class="space-y-4">
+            {% for member in family %}
+            <div class="flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <div class="h-10 w-10 rounded-full bg-gray-200 flex items-center justify-center text-gray-600">
+                        {{ member.name.split(' ')|map('first')|join('')|upper }}
+                    </div>
+                    <div>
+                        <p class="font-medium">{{ member.name }}</p>
+                        <p class="text-sm text-gray-500">{{ member.relation }}</p>
+                    </div>
+                </div>
+                <input type="checkbox" {% if member.relation == 'Spouse' %}checked{% endif %} class="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded">
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+
+<!-- Invite Dialog -->
+<dialog id="invite-dialog" class="bg-white rounded-lg shadow-xl p-6 max-w-md w-full">
+    <div class="flex justify-between items-center mb-4">
+        <h3 class="text-lg font-bold">Invite Family Member</h3>
+        <button onclick="document.getElementById('invite-dialog').close()" class="text-gray-500 hover:text-gray-700">
+            &times;
+        </button>
+    </div>
+    <p class="text-gray-500 mb-4">Enter the details of the person you'd like to grant access to your emergency notes.</p>
+    
+    <form method="POST" action="{{ url_for('invite_family_member') }}" class="space-y-4">
+        <div>
+            <label for="name" class="block text-sm font-medium text-gray-700">Name</label>
+            <input type="text" id="name" name="name" required class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500">
+        </div>
+        
+        <div>
+            <label for="email" class="block text-sm font-medium text-gray-700">Email</label>
+            <input type="email" id="email" name="email" required class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500">
+        </div>
+        
+        <div>
+            <label for="relation" class="block text-sm font-medium text-gray-700">Relation</label>
+            <input type="text" id="relation" name="relation" required class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500" placeholder="e.g., Spouse, Doctor">
+        </div>
+        
+        <div class="flex justify-end gap-3 pt-4">
+            <button type="button" onclick="document.getElementById('invite-dialog').close()" class="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">
+                Cancel
+            </button>
+            <button type="submit" class="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700">
+                Send Invite
+            </button>
+        </div>
+    </form>
+</dialog>
+
+<script>
+// Handle email invitation
+function sendInvite(event) {
+    event.preventDefault();
+    const form = event.target;
+    const formData = new FormData(form);
+    
+    const name = formData.get('name');
+    const email = formData.get('email');
+    const relation = formData.get('relation');
+    
+    const subject = encodeURIComponent("Invitation to View My Kobatela Emergency Notes");
+    const body = encodeURIComponent(`Hi ${name},\\n\\nI'm inviting you to view my emergency health information on Kobatela. This will grant you access to critical notes and documents in case of an emergency.\\n\\nBest regards,`);
+    
+    window.location.href = `mailto:${email}?subject=${subject}&body=${body}`;
+    document.getElementById('invite-dialog').close();
+    
+    // Show notification
+    const notification = document.createElement('div');
+    notification.className = 'fixed bottom-4 right-4 bg-green-500 text-white px-4 py-2 rounded-md shadow-lg';
+    notification.textContent = `Invitation email opened for ${name}`;
+    document.body.appendChild(notification);
+    
+    setTimeout(() => {
+        notification.remove();
+    }, 3000);
+    
+    return false;
+}
+</script>
+{% endblock %}
