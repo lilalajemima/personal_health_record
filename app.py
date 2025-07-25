@@ -1,249 +1,318 @@
-from flask import Flask, render_template, request, redirect, url_for, session, flash, send_file, jsonify
+from flask import Flask, render_template, session, redirect, request, url_for, flash, send_file, jsonify
+from functools import wraps
 from pymongo import MongoClient
-from dotenv import load_dotenv
-from datetime import datetime
+from passlib.hash import pbkdf2_sha256
+import uuid
 import os
-import google.generativeai as genai
 from werkzeug.utils import secure_filename
-from bson.objectid import ObjectId
-from typing import Dict, List, Optional
-from dataclasses import dataclass
+from datetime import datetime, timedelta
+from flask.json.provider import DefaultJSONProvider
+from bson import ObjectId
 from io import BytesIO
 from reportlab.pdfgen import canvas
-from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
-from google.oauth2 import id_token
-from google.auth.transport import requests as google_requests
-import google.auth.transport.requests
-import google.oauth2.id_token
-import google_auth_oauthlib.flow
-import requests
+from reportlab.lib.pagesizes import letter
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+from reportlab.lib.styles import getSampleStyleSheet
+from dotenv import load_dotenv
+import json
+import google.generativeai as genai
+from datetime import datetime
 
 # Load environment variables
 load_dotenv()
 
 # Initialize Flask app
 app = Flask(__name__)
-app.secret_key = os.getenv("SECRET_KEY", "dev-secret-key")
+app.secret_key = os.getenv("SECRET_KEY", "dev-secret-key").encode()
+
+
+class MongoJSONProvider(DefaultJSONProvider):
+    def default(self, o):
+        if isinstance(o, ObjectId):
+            return str(o)
+        if isinstance(o, datetime):
+            return o.isoformat()
+        return super().default(o)
+
+app.json = MongoJSONProvider(app)
 
 # Configure file uploads
-app.config['UPLOAD_FOLDER'] = 'static/uploads'
-app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max
-os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+UPLOAD_FOLDER = 'static/uploads'
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'pdf'}
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-# Configure MongoDB
+# Database setup
+client = MongoClient(os.getenv("MONGO_URI"))
+db = client.kobatela
 
-
-
-
-# Configure Gemini AI
-genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-model = genai.GenerativeModel('gemini-pro')
-
-# Configure Flask-Login
-login_manager = LoginManager()
-login_manager.init_app(app)
-login_manager.login_view = 'login'
-
-# Google OAuth config
-app.config['GOOGLE_CLIENT_ID'] = os.getenv("GOOGLE_CLIENT_ID")
-app.config['GOOGLE_CLIENT_SECRET'] = os.getenv("GOOGLE_CLIENT_SECRET")
-app.config['GOOGLE_DISCOVERY_URL'] = "https://accounts.google.com/.well-known/openid-configuration"
-
-# Data classes for type hints
-@dataclass
-class SuggestTestsState:
-    message: Optional[str]
-    errors: Optional[Dict[str, List[str]]]
-    suggestions: Optional[Dict]
-
-class User(UserMixin):
-    def __init__(self, user_data):
-        self.id = str(user_data['_id'])
-        self.email = user_data['email']
-        self.name = user_data.get('name', '')
-        self.avatar = user_data.get('avatar_url', '')
-
-@login_manager.user_loader
-def load_user(user_id):
-    user_data = db.users.find_one({"_id": ObjectId(user_id)})
-    if not user_data:
-        return None
-    return User(user_data)
-
-def get_google_provider_cfg():
-    return requests.get(app.config['GOOGLE_DISCOVERY_URL']).json()
-
-# Custom template filters
-@app.template_filter('datetimeformat')
-def datetimeformat(value, format='%b %d, %Y'):
-    if value is None:
-        return ""
-    if isinstance(value, str):
-        try:
-            value = datetime.strptime(value, '%Y-%m-%d')
-        except:
-            return value
-    return value.strftime(format)
+# Collections
+users = db.users
+col_medical_history = db.medical_history
+col_medications = db.medications
+col_vaccines = db.vaccines
+col_lab_reports = db.lab_reports
+col_emergency_notes = db.emergency_notes
+col_family_members = db.family_members
+col_reminders = db.reminders
 
 # Helper functions
-def parse_ai_response(text: str) -> Dict:
-    """Parse the AI response into structured data"""
-    parts = text.split("\n\n")
-    suggested_tests = []
-    reasoning = ""
+def allowed_file(filename):
+    return '.' in filename and \
+           filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+def login_required(f):
+    @wraps(f)
+    def wrap(*args, **kwargs):
+        if 'logged_in' in session:
+            return f(*args, **kwargs)
+        flash("Please log in to access this page", "error")
+        return redirect(url_for('login'))
+    return wrap
+
+def generate_pdf_export(user_id):
+    """Generate comprehensive PDF health summary"""
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter)
+    styles = getSampleStyleSheet()
+    story = []
     
-    for part in parts:
-        if "recommended tests" in part.lower() or "suggested tests" in part.lower():
-            tests = [line.strip() for line in part.split("\n") if line.strip()]
-            suggested_tests = [t for t in tests if not t.lower().startswith("recommended")]
-        elif "reasoning" in part.lower():
-            reasoning = part.replace("Reasoning:", "").strip()
+    # User info
+    user = users.find_one({"_id": ObjectId(user_id)})
+    story.append(Paragraph(f"Kobatela Health Summary for {user.get('name', '')}", styles['Title']))
+    story.append(Spacer(1, 12))
     
-    return {
-        "suggestedTests": suggested_tests,
-        "reasoning": reasoning
-    }
+    # Personal Information
+    story.append(Paragraph("Personal Information", styles['Heading2']))
+    story.append(Paragraph(f"Name: {user.get('name', '')}", styles['Normal']))
+    story.append(Paragraph(f"Age: {user.get('age', '')}", styles['Normal']))
+    story.append(Paragraph(f"Gender: {user.get('gender', '')}", styles['Normal']))
+    story.append(Spacer(1, 12))
+    
+    # Medical History
+    history = list(medical_history.find({"user_id": ObjectId(user_id)}).sort("date", -1))
+    if history:
+        story.append(Paragraph("Medical History", styles['Heading2']))
+        for item in history:
+            story.append(Paragraph(f"- {item['type']}: {item['details']} ({item['date']})", styles['Normal']))
+        story.append(Spacer(1, 12))
+    
+    # Medications
+    meds = list(medications.find({"user_id": ObjectId(user_id)}))
+    if meds:
+        story.append(Paragraph("Current Medications", styles['Heading2']))
+        for med in meds:
+            story.append(Paragraph(f"- {med['name']} ({med['dosage']}), {med['frequency']}", styles['Normal']))
+        story.append(Spacer(1, 12))
+    
+    # Vaccines
+    vax = list(vaccines.find({"user_id": ObjectId(user_id)}).sort("date", -1))
+    if vax:
+        story.append(Paragraph("Vaccination Records", styles['Heading2']))
+        for vaccine in vax:
+            booster_info = f", Booster due: {vaccine['booster_due']}" if vaccine.get('booster_due') else ""
+            story.append(Paragraph(f"- {vaccine['name']} ({vaccine['date']}{booster_info})", styles['Normal']))
+        story.append(Spacer(1, 12))
+    
+    # Emergency Notes
+    notes = emergency_notes.find_one({"user_id": ObjectId(user_id)})
+    if notes:
+        story.append(Paragraph("Emergency Information", styles['Heading2']))
+        if notes.get('blood_type'):
+            story.append(Paragraph(f"Blood Type: {notes['blood_type']}", styles['Normal']))
+        if notes.get('allergies'):
+            story.append(Paragraph("Allergies:", styles['Normal']))
+            story.append(Paragraph(notes['allergies'], styles['Normal']))
+        if notes.get('emergency_contacts'):
+            story.append(Paragraph("Emergency Contacts:", styles['Normal']))
+            story.append(Paragraph(notes['emergency_contacts'], styles['Normal']))
+    
+    doc.build(story)
+    buffer.seek(0)
+    return buffer
+
+# User class for authentication
+class User:
+    def start_session(self, user):
+        user['_id'] = str(user['_id'])
+        del user['password']
+        session['logged_in'] = True
+        session['user'] = user
+        return redirect(url_for('dashboard'))
+
+    def signup(self):
+        # Validate input
+        if not request.form.get('email') or not request.form.get('password'):
+            flash("Email and password are required", "error")
+            return None
+
+        user = {
+            "_id": ObjectId(),
+            "name": request.form.get('name', ""),
+            "email": request.form.get('email'),
+            "password": pbkdf2_sha256.hash(request.form.get('password')),
+            "age": int(request.form.get('age', 0)) if request.form.get('age') else None,
+            "gender": request.form.get('gender'),
+            "weight": float(request.form.get('weight')) if request.form.get('weight') else None,
+            "avatar_url": "",
+            "role": "user",
+            "created_at": datetime.utcnow(),
+            "last_login": None
+        }
+
+        # Check for existing user
+        if users.find_one({"email": user['email']}):
+            flash("Email already exists", "error")
+            return None
+
+        # Insert user
+        if users.insert_one(user):
+            return self.start_session(user)
+        
+        flash("Signup failed", "error")
+        return None
+
+    def login(self):
+    email = request.form.get('email')
+    password = request.form.get('password')
+    
+    print(f"Attempting login for email: {email}")  # Debug
+    
+    user = users.find_one({"email": email})
+    
+    if user:
+        print(f"User found: {user['email']}")  # Debug
+        print(f"Stored hash: {user['password']}")  # Debug
+        print(f"Password verify attempt")  # Debug
+        if pbkdf2_sha256.verify(password, user['password']):
+            print("Password verified")  # Debug
+            # Update last login
+            users.update_one(
+                {"_id": user['_id']},
+                {"$set": {"last_login": datetime.utcnow()}}
+            )
+            return self.start_session(user)
+        else:
+            print("Password verification failed")  # Debug
+    else:
+        print("No user found with that email")  # Debug
+    
+    flash("Invalid credentials", "error")
+    return None
+
+    def signout(self):
+        session.clear()
+        flash("You have been logged out", "info")
+        return redirect(url_for('login'))
+
+# Initialize User
+user_manager = User()
+
+@app.context_processor
+def inject_datetime():
+    from datetime import datetime
+    return {'datetime': datetime}
 
 @app.context_processor
 def inject_now():
     return {'now': datetime.utcnow()}
+@app.template_filter('datetimeformat')
+def datetimeformat(value, format='%Y-%m-%d %H:%M'):
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        # If it's already a string, try to parse it
+        try:
+            value = datetime.strptime(value, '%Y-%m-%d')
+        except ValueError:
+            return value
+    return value.strftime(format)
 
-# Authentication routes
-@app.route('/login')
-def login():
-    if current_user.is_authenticated:
+# Routes
+@app.route('/')
+def home():
+    if 'logged_in' in session:
         return redirect(url_for('dashboard'))
     return render_template('login.html')
 
-@app.route('/login/google')
-def google_login():
-    # Create flow instance to manage the OAuth 2.0 Authorization Grant Flow steps
-    flow = google_auth_oauthlib.flow.Flow.from_client_config(
-        client_config={
-            "web": {
-                "client_id": app.config['GOOGLE_CLIENT_ID'],
-                "client_secret": app.config['GOOGLE_CLIENT_SECRET'],
-                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-                "token_uri": "https://accounts.google.com/o/oauth2/token",
-                "redirect_uris": [url_for('google_callback', _external=True)]
-            }
-        },
-        scopes=["openid", "https://www.googleapis.com/auth/userinfo.email", "https://www.googleapis.com/auth/userinfo.profile"]
-    )
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if 'logged_in' in session:
+        return redirect(url_for('dashboard'))
     
-    # Generate authorization URL
-    authorization_url, state = flow.authorization_url(
-        access_type='offline',
-        include_granted_scopes='true'
-    )
+    if request.method == 'POST':
+        result = user_manager.login()
+        if result:
+            return result
     
-    # Store the state in session
-    session['state'] = state
-    
-    return redirect(authorization_url)
+    return render_template('login.html')
 
-@app.route('/login/google/callback')
-def google_callback():
-    # Verify state
-    if request.args.get('state') != session.get('state'):
-        flash('Invalid state parameter', 'error')
-        return redirect(url_for('login'))
+@app.route('/signup', methods=['GET', 'POST'])
+def signup():
+    if 'logged_in' in session:
+        return redirect(url_for('dashboard'))
     
-    # Create flow instance
-    flow = google_auth_oauthlib.flow.Flow.from_client_config(
-        client_config={
-            "web": {
-                "client_id": app.config['GOOGLE_CLIENT_ID'],
-                "client_secret": app.config['GOOGLE_CLIENT_SECRET'],
-                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-                "token_uri": "https://accounts.google.com/o/oauth2/token",
-                "redirect_uris": [url_for('google_callback', _external=True)]
-            }
-        },
-        scopes=["openid", "https://www.googleapis.com/auth/userinfo.email", "https://www.googleapis.com/auth/userinfo.profile"],
-        state=session['state']
-    )
+    if request.method == 'POST':
+        result = user_manager.signup()
+        if result:
+            return result
     
-    # Exchange auth code for tokens
-    flow.fetch_token(authorization_response=request.url)
-    
-    # Get user info
-    credentials = flow.credentials
-    id_info = id_token.verify_oauth2_token(
-        credentials.id_token,
-        google_requests.Request(),
-        app.config['GOOGLE_CLIENT_ID']
-    )
-    
-    # Check if user exists or create new user
-    user = db.users.find_one({"email": id_info['email']})
-    if not user:
-        user_data = {
-            "email": id_info['email'],
-            "name": id_info.get('name', ''),
-            "avatar_url": id_info.get('picture', ''),
-            "created_at": datetime.utcnow(),
-            "last_login": datetime.utcnow()
-        }
-        user_id = db.users.insert_one(user_data).inserted_id
-        user = db.users.find_one({"_id": user_id})
-    else:
-        db.users.update_one(
-            {"_id": user["_id"]},
-            {"$set": {"last_login": datetime.utcnow()}}
-        )
-    
-    # Log in the user
-    login_user(User(user))
-    
-    flash('Logged in successfully!', 'success')
-    return redirect(url_for('dashboard'))
+    return render_template('signup.html')
 
 @app.route('/logout')
 @login_required
 def logout():
-    logout_user()
-    session.clear()
-    flash('You have been logged out.', 'info')
-    return redirect(url_for('login'))
+    return user_manager.signout()
 
-# Application routes
-@app.route('/')
+# Dashboard
+@app.route('/dashboard')
 @login_required
 def dashboard():
-    user = db.users.find_one({"_id": ObjectId(current_user.id)})
-    if not user:
-        logout_user()
-        return redirect(url_for('login'))
+    user_id = ObjectId(session['user']['_id'])
     
-    # Get data for dashboard
-    medications = list(db.medications.find({"user_id": user["_id"]}).limit(3))
-    vaccines = list(db.vaccines.find({"user_id": user["_id"]}).sort("date", -1).limit(3))
-    lab_reports = list(db.lab_reports.find({"user_id": user["_id"]}).sort("date", -1).limit(3))
+    # Get counts for summary cards
+    med_count = db.medications.count_documents({"user_id": user_id})
+    upcoming_reminders = list(col_reminders.find({
+        "user_id": user_id,
+        "due_date": {"$gte": datetime.utcnow()}
+    }).sort("due_date", 1).limit(3))
     
-    return render_template(
-        'dashboard.html',
-        user=user,
-        medications=medications,
-        vaccines=vaccines,
-        lab_reports=lab_reports,
-        active_tab='dashboard'
+    # Get next vaccine due
+    next_vaccine = col_vaccines.find_one({
+        "user_id": user_id,
+        "$or": [
+            {"booster_due": {"$gte": datetime.utcnow().strftime('%Y-%m-%d')}},
+            {"booster_due": {"$exists": False}}
+        ]
+    }, sort=[("booster_due", 1)])
+    
+    # Get most recent lab report
+    recent_lab = col_lab_reports.find_one(
+        {"user_id": user_id},
+        sort=[("date", -1)]
+    )
+    
+    return render_template('dashboard.html',
+        med_count=med_count,
+        reminders=upcoming_reminders,
+        next_vaccine=next_vaccine,
+        recent_lab=recent_lab,
+        current_date=datetime.now().strftime('%B %d, %Y')
     )
 
+# Profile
 @app.route('/profile', methods=['GET', 'POST'])
 @login_required
 def profile():
-    user = db.users.find_one({"_id": ObjectId(current_user.id)})
-    if not user:
-        logout_user()
-        return redirect(url_for('login'))
+    user_id = ObjectId(session['user']['_id'])
+    user = users.find_one({"_id": user_id})
     
     if request.method == 'POST':
         updates = {
             "name": request.form.get('name'),
             "email": request.form.get('email'),
-            "age": int(request.form.get('age', 0)),
-            "weight": int(request.form.get('weight', 0)),
+            "age": int(request.form.get('age')) if request.form.get('age') else None,
+            "weight": float(request.form.get('weight')) if request.form.get('weight') else None,
             "gender": request.form.get('gender'),
             "updated_at": datetime.utcnow()
         }
@@ -251,395 +320,474 @@ def profile():
         # Handle file upload
         if 'avatar' in request.files:
             file = request.files['avatar']
-            if file.filename != '':
-                filename = secure_filename(file.filename)
-                file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
-                updates["avatar_url"] = url_for('static', filename=f'uploads/{filename}')
+            if file and allowed_file(file.filename):
+                filename = secure_filename(f"{user_id}_{file.filename}")
+                filepath = os.path.join(app.config['UPLOAD_FOLDER'], 'avatars', filename)
+                os.makedirs(os.path.dirname(filepath), exist_ok=True)
+                file.save(filepath)
+                updates['avatar_url'] = f"/static/uploads/avatars/{filename}"
         
-        db.users.update_one(
-            {"_id": user["_id"]},
-            {"$set": updates}
-        )
-        flash('Profile updated successfully!', 'success')
+        # Update password if provided
+        if request.form.get('current_password') and request.form.get('new_password'):
+            if pbkdf2_sha256.verify(request.form.get('current_password'), user['password']):
+                updates['password'] = pbkdf2_sha256.hash(request.form.get('new_password'))
+            else:
+                flash("Current password is incorrect", "error")
+                return redirect(url_for('profile'))
+        
+        users.update_one({"_id": user_id}, {"$set": updates})
+        session['user'] = users.find_one({"_id": user_id})
+        flash("Profile updated successfully", "success")
         return redirect(url_for('profile'))
     
-    return render_template(
-        'profile.html',
-        user=user,
-        active_tab='profile'
-    )
+    return render_template('profile.html', user=user)
 
+# Medical History
 @app.route('/medical-history', methods=['GET', 'POST'])
 @login_required
 def medical_history():
-    user = db.users.find_one({"_id": ObjectId(current_user.id)})
-    if not user:
-        logout_user()
-        return redirect(url_for('login'))
+    user_id = ObjectId(session['user']['_id'])
     
     if request.method == 'POST':
         # Handle file upload
         file = request.files.get('attachment')
         filename = None
-        if file and file.filename != '':
-            filename = secure_filename(file.filename)
-            file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+        if file and file.filename != '' and allowed_file(file.filename):
+            filename = secure_filename(f"{user_id}_{datetime.now().strftime('%Y%m%d%H%M%S')}_{file.filename}")
+            filepath = os.path.join(app.config['UPLOAD_FOLDER'], 'medical_history', filename)
+            os.makedirs(os.path.dirname(filepath), exist_ok=True)
+            file.save(filepath)
+            filename = f"medical_history/{filename}"
         
-        # Create new history entry
+        # Parse the date string into a datetime object
+        date_str = request.form.get('date')
+        try:
+            entry_date = datetime.strptime(date_str, '%Y-%m-%d') if date_str else None
+        except ValueError:
+            entry_date = None
+            flash('Invalid date format', 'error')
+            return redirect(url_for('medical_history'))
+        
+        # Create new entry with proper datetime object
         new_entry = {
-            "user_id": user["_id"],
+            "user_id": user_id,
             "type": request.form.get('type'),
             "details": request.form.get('details'),
-            "date": request.form.get('date'),
+            "date": entry_date,  # Store as datetime object
             "notes": request.form.get('notes'),
             "filename": filename,
             "created_at": datetime.utcnow()
         }
         
-        db.medical_history.insert_one(new_entry)
-        flash('Medical history entry added successfully!', 'success')
+        col_medical_history.insert_one(new_entry)
+        flash('Medical history entry added!', 'success')
         return redirect(url_for('medical_history'))
     
-    history = list(db.medical_history.find({"user_id": user["_id"]}).sort("date", -1))
+    # Retrieve and format history
+    history = list(col_medical_history.find({"user_id": user_id}).sort("date", -1))
     
-    return render_template(
-        'medical_history.html',
-        user=user,
-        history=history,
-        active_tab='history'
-    )
+    # Format dates safely
+    for item in history:
+        if 'date' in item:
+            if isinstance(item['date'], str):
+                try:
+                    item['date'] = datetime.strptime(item['date'], '%Y-%m-%d')
+                except ValueError:
+                    item['date'] = None
+            item['formatted_date'] = item['date'].strftime('%b %d, %Y') if item['date'] else 'No date'
+        else:
+            item['formatted_date'] = 'No date'
+    
+    return render_template('medical_history.html', history=history)
 
+# Medications
 @app.route('/medications', methods=['GET', 'POST'])
 @login_required
 def medications():
-    user = db.users.find_one({"_id": ObjectId(current_user.id)})
-    if not user:
-        logout_user()
-        return redirect(url_for('login'))
+    user_id = ObjectId(session['user']['_id'])
     
     if request.method == 'POST':
-        times = request.form.get('time', '').split(',')
-        times = [t.strip() for t in times if t.strip()]
-        
+        # Create new medication
         new_med = {
-            "user_id": user["_id"],
+            "user_id": user_id,
             "name": request.form.get('name'),
             "dosage": request.form.get('dosage'),
             "frequency": request.form.get('frequency'),
-            "times": times,
+            "times": request.form.getlist('times'),
+            "notes": request.form.get('notes'),
             "created_at": datetime.utcnow()
         }
         
-        db.medications.insert_one(new_med)
-        flash('Medication added successfully!', 'success')
+        col_medications.insert_one(new_med)
+        flash('Medication added!', 'success')
         return redirect(url_for('medications'))
     
-    meds = list(db.medications.find({"user_id": user["_id"]}))
-    
-    return render_template(
-        'medications.html',
-        user=user,
-        medications=meds,
-        active_tab='meds'
-    )
+    meds = list(col_medications.find({"user_id": user_id}).sort("created_at", -1))
+    return render_template('medications.html', medications=meds)
 
-@app.route('/delete-medication/<med_id>')
+@app.route('/medications/<med_id>/delete', methods=['POST'])
 @login_required
 def delete_medication(med_id):
-    user = db.users.find_one({"_id": ObjectId(current_user.id)})
-    if not user:
-        logout_user()
-        return redirect(url_for('login'))
-    
-    db.medications.delete_one({"_id": ObjectId(med_id), "user_id": user["_id"]})
-    flash('Medication deleted successfully', 'success')
+    user_id = ObjectId(session['user']['_id'])
+    col_medications.delete_one({"_id": ObjectId(med_id), "user_id": user_id})
+    flash('Medication deleted', 'success')
     return redirect(url_for('medications'))
 
+# Vaccines
 @app.route('/vaccines', methods=['GET', 'POST'])
 @login_required
-def vaccines():
-    user = db.users.find_one({"_id": ObjectId(current_user.id)})
-    if not user:
-        logout_user()
-        return redirect(url_for('login'))
+def vaccines_page():
+    user_id = ObjectId(session['user']['_id'])
     
     if request.method == 'POST':
         # Handle file upload
-        file = request.files.get('attachment')
+        file = request.files.get('card_file')
         filename = None
-        if file and file.filename != '':
-            filename = secure_filename(file.filename)
-            file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+        if file and file.filename != '' and allowed_file(file.filename):
+            filename = secure_filename(f"{user_id}_{datetime.now().strftime('%Y%m%d%H%M%S')}_{file.filename}")
+            filepath = os.path.join(app.config['UPLOAD_FOLDER'], 'vaccines', filename)
+            os.makedirs(os.path.dirname(filepath), exist_ok=True)
+            file.save(filepath)
+            filename = f"vaccines/{filename}"
         
-        # Create new vaccine record
+        date_str = request.form.get('date')
+        booster_due_str = request.form.get('booster_due')
+        
+        try:
+            vaccine_date = datetime.strptime(date_str, '%Y-%m-%d') if date_str else None
+            booster_due = datetime.strptime(booster_due_str, '%Y-%m-%d') if booster_due_str else None
+        except ValueError:
+            flash('Invalid date format. Please use YYYY-MM-DD', 'error')
+            return redirect(url_for('vaccines_page'))
+        
         new_vaccine = {
-            "user_id": user["_id"],
+            "user_id": user_id,
             "name": request.form.get('name'),
-            "date": request.form.get('date'),
-            "booster_due": request.form.get('booster_due') or None,
+            "date": vaccine_date,
+            "booster_due": booster_due,  # Now stored as datetime object
             "filename": filename,
             "created_at": datetime.utcnow()
         }
         
-        db.vaccines.insert_one(new_vaccine)
-        flash('Vaccine record added successfully!', 'success')
-        return redirect(url_for('vaccines'))
+        col_vaccines.insert_one(new_vaccine)
+        flash('Vaccine added!', 'success')
+        return redirect(url_for('vaccines_page'))
     
-    # Calculate booster statuses
-    today = datetime.utcnow()
-    vaccines = list(db.vaccines.find({"user_id": user["_id"]}).sort("date", -1))
-    for vaccine in vaccines:
-        if vaccine.get('booster_due'):
+    # Retrieve and format vaccine records
+    vax = list(col_vaccines.find({"user_id": user_id}).sort("date", -1))
+    
+    # Convert dates to datetime objects if they're strings
+    for vaccine in vax:
+        if isinstance(vaccine.get('date'), str):
             try:
-                booster_date = datetime.strptime(vaccine['booster_due'], '%Y-%m-%d')
-                days_until_due = (booster_date - today).days
+                vaccine['date'] = datetime.strptime(vaccine['date'], '%Y-%m-%d')
+            except (ValueError, TypeError):
+                vaccine['date'] = None
                 
-                if days_until_due < 0:
-                    vaccine['booster_status'] = {'text': 'Overdue', 'variant': 'destructive'}
-                elif days_until_due <= 30:
-                    vaccine['booster_status'] = {'text': 'Due Soon', 'variant': 'outline'}
-                else:
-                    vaccine['booster_status'] = {'text': booster_date.strftime('%b %d, %Y'), 'variant': 'default'}
-            except:
-                vaccine['booster_status'] = {'text': vaccine['booster_due'], 'variant': 'secondary'}
-        else:
-            vaccine['booster_status'] = {'text': 'N/A', 'variant': 'secondary'}
+        if isinstance(vaccine.get('booster_due'), str):
+            try:
+                vaccine['booster_due'] = datetime.strptime(vaccine['booster_due'], '%Y-%m-%d')
+            except (ValueError, TypeError):
+                vaccine['booster_due'] = None
     
-    return render_template(
-        'vaccines.html',
-        user=user,
-        vaccines=vaccines,
-        active_tab='vaccines'
-    )
+    return render_template('vaccines.html', vaccines=vax)
 
-@app.route('/set-vaccine-reminder/<vaccine_id>')
-@login_required
-def set_vaccine_reminder(vaccine_id):
-    user = db.users.find_one({"_id": ObjectId(current_user.id)})
-    if not user:
-        logout_user()
-        return redirect(url_for('login'))
-    
-    vaccine = db.vaccines.find_one({"_id": ObjectId(vaccine_id), "user_id": user["_id"]})
-    if vaccine:
-        flash(f'Reminder set for {vaccine["name"]} booster', 'info')
-    return redirect(url_for('vaccines'))
+# Lab Reports
 
 @app.route('/lab-reports', methods=['GET', 'POST'])
 @login_required
-def lab_reports():
-    user = db.users.find_one({"_id": ObjectId(current_user.id)})
-    if not user:
-        logout_user()
-        return redirect(url_for('login'))
+def lab_reports_page():
+    user_id = ObjectId(session['user']['_id'])
     
     if request.method == 'POST':
-        file = request.files.get('file')
-        if file and file.filename != '':
-            filename = secure_filename(file.filename)
-            file_id = db.lab_reports.insert_one({
-                "user_id": user["_id"],
-                "filename": filename,
-                "name": os.path.splitext(filename)[0],
-                "date": datetime.utcnow().strftime('%Y-%m-%d'),
-                "type": "General",
-                "uploaded_at": datetime.utcnow()
-            }).inserted_id
-            
-            file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
-            flash(f'Report {filename} uploaded successfully!', 'success')
-    
-    reports = list(db.lab_reports.find({"user_id": user["_id"]}).sort("date", -1))
-    medical_history = list(db.medical_history.find({"user_id": user["_id"]}))
-    
-    return render_template(
-        'lab_reports.html',
-        user=user,
-        reports=reports,
-        medical_history=medical_history,
-        active_tab='labs'
-    )
-
-@app.route('/delete-lab-report/<report_id>')
-@login_required
-def delete_lab_report(report_id):
-    user = db.users.find_one({"_id": ObjectId(current_user.id)})
-    if not user:
-        logout_user()
-        return redirect(url_for('login'))
-    
-    report = db.lab_reports.find_one({"_id": ObjectId(report_id), "user_id": user["_id"]})
-    if report:
-        try:
-            os.remove(os.path.join(app.config['UPLOAD_FOLDER'], report['filename']))
-        except:
-            pass
+        # [Keep existing file upload and report creation code]
+        file = request.files.get('report_file')
+        if not file or file.filename == '':
+            flash("No file selected", "error")
+            return redirect(url_for('lab_reports_page'))
         
-        db.lab_reports.delete_one({"_id": ObjectId(report_id)})
-        flash('Lab report deleted successfully', 'success')
+        if not allowed_file(file.filename):
+            flash("Invalid file type. Only PDF, PNG, JPG allowed", "error")
+            return redirect(url_for('lab_reports_page'))
+        
+        filename = secure_filename(f"{user_id}_{datetime.now().strftime('%Y%m%d%H%M%S')}_{file.filename}")
+        filepath = os.path.join(app.config['UPLOAD_FOLDER'], 'lab_reports', filename)
+        os.makedirs(os.path.dirname(filepath), exist_ok=True)
+        file.save(filepath)
+        
+        # Create lab report entry
+        new_report = {
+            "user_id": user_id,
+            "name": request.form.get('name'),
+            "test_type": request.form.get('test_type'),
+            "date": request.form.get('date'),
+            "notes": request.form.get('notes'),
+            "filename": f"lab_reports/{filename}",
+            "created_at": datetime.utcnow()
+        }
+        
+        col_lab_reports.insert_one(new_report)
+        flash('Lab report uploaded!', 'success')
+        return redirect(url_for('lab_reports_page'))
     
-    return redirect(url_for('lab_reports'))
+    reports = list(col_lab_reports.find({"user_id": user_id}).sort("date", -1))
+    
+    # Get user profile for AI suggestions
+    user = users.find_one({"_id": user_id})
+    suggestions = []
+    
+    if user.get('age') and user.get('gender'):
+        # Generate AI suggestions based on profile
+        prompt = f"""
+        Act as a medical expert recommending health tests. Based on this profile:
+        - Age: {user['age']}
+        - Gender: {user['gender']}
+        - Weight: {user.get('weight', 'not specified')} kg
+        
+        Provide 3-5 recommended medical tests with brief explanations.
+        Format your response as a JSON array with 'test' and 'reason' fields.
+        Example:
+        {{
+            "suggestions": [
+                {{
+                    "test": "Blood Pressure",
+                    "reason": "Routine check recommended annually for adults"
+                }},
+                {{
+                    "test": "Cholesterol",
+                    "reason": "Recommended every 4-6 years for adults over 20"
+                }}
+            ]
+        }}
+        """
+        
+        try:
+            response = model.generate_content(prompt)
+            # Parse the JSON response from Gemini
+            suggestions = json.loads(response.text).get('suggestions', [])
+            
+            # Store the suggestions for future reference
+            col_lab_reports.update_one(
+                {"user_id": user_id},
+                {"$set": {"last_ai_suggestions": suggestions}},
+                upsert=True
+            )
+        except Exception as e:
+            print(f"Error getting AI suggestions: {e}")
+            # Fallback to stored suggestions if available
+            last_report = col_lab_reports.find_one(
+                {"user_id": user_id},
+                sort=[("created_at", -1)]
+            )
+            if last_report and 'last_ai_suggestions' in last_report:
+                suggestions = last_report['last_ai_suggestions']
+    
+    return render_template('lab_reports.html', 
+                         reports=reports, 
+                         suggestions=suggestions)
 
-@app.route('/emergency-notes', methods=['GET', 'POST'])
+# Emergency Notes
+@app.route('/emergency', methods=['GET', 'POST'])
 @login_required
-def emergency_notes():
-    user = db.users.find_one({"_id": ObjectId(current_user.id)})
-    if not user:
-        logout_user()
-        return redirect(url_for('login'))
+def emergency_notes_page():
+    user_id = ObjectId(session['user']['_id'])
+    notes = emergency_notes.find_one({"user_id": user_id})
     
     if request.method == 'POST':
-        updates = {
+        # Handle file uploads
+        files = request.files.getlist('emergency_files')
+        filepaths = []
+        
+        for file in files:
+            if file and file.filename != '' and allowed_file(file.filename):
+                filename = secure_filename(f"{user_id}_{datetime.now().strftime('%Y%m%d%H%M%S')}_{file.filename}")
+                filepath = os.path.join(app.config['UPLOAD_FOLDER'], 'emergency', filename)
+                os.makedirs(os.path.dirname(filepath), exist_ok=True)
+                file.save(filepath)
+                filepaths.append(f"emergency/{filename}")
+        
+        # Update or create emergency notes
+        emergency_data = {
+            "user_id": user_id,
             "blood_type": request.form.get('blood_type'),
             "allergies": request.form.get('allergies'),
-            "emergency_contacts": request.form.get('contacts'),
-            "medical_conditions": request.form.get('conditions'),
+            "medical_conditions": request.form.get('medical_conditions'),
+            "emergency_contacts": request.form.get('emergency_contacts'),
+            "files": filepaths,
             "updated_at": datetime.utcnow()
         }
         
-        db.emergency_notes.update_one(
-            {"user_id": user["_id"]},
-            {"$set": updates},
-            upsert=True
-        )
-        flash('Emergency notes updated successfully!', 'success')
-        return redirect(url_for('emergency_notes'))
+        if notes:
+            emergency_notes.update_one(
+                {"_id": notes['_id']},
+                {"$set": emergency_data}
+            )
+        else:
+            emergency_notes.insert_one(emergency_data)
+        
+        flash('Emergency notes updated!', 'success')
+        return redirect(url_for('emergency_notes_page'))
     
-    notes = db.emergency_notes.find_one({"user_id": user["_id"]}) or {}
-    family = list(db.family_members.find({"user_id": user["_id"]}))
-    
-    return render_template(
-        'emergency_notes.html',
-        user=user,
-        notes=notes,
-        family=family,
-        active_tab='emergency'
-    )
+    family = list(family_members.find({"user_id": user_id}))
+    return render_template('emergency.html', notes=notes, family=family)
 
-@app.route('/add-family-member', methods=['POST'])
+# Family Access
+@app.route('/family-access/add', methods=['POST'])
 @login_required
 def add_family_member():
-    user = db.users.find_one({"_id": ObjectId(current_user.id)})
-    if not user:
-        logout_user()
-        return redirect(url_for('login'))
+    user_id = ObjectId(session['user']['_id'])
+    email = request.form.get('email')
     
-    initials = request.form.get('name', '')[:2].upper()
-    new_member = {
-        "user_id": user["_id"],
-        "name": request.form.get('name'),
-        "email": request.form.get('email'),
+    # Check if email exists
+    family_user = users.find_one({"email": email})
+    if not family_user:
+        flash("No user found with that email", "error")
+        return redirect(url_for('emergency_notes_page'))
+    
+    # Check if already added
+    existing = family_members.find_one({
+        "user_id": user_id,
+        "family_user_id": family_user['_id']
+    })
+    if existing:
+        flash("This family member is already added", "error")
+        return redirect(url_for('emergency_notes_page'))
+    
+    # Add family member
+    family_members.insert_one({
+        "user_id": user_id,
+        "family_user_id": family_user['_id'],
+        "name": family_user.get('name'),
+        "email": family_user.get('email'),
         "relation": request.form.get('relation'),
-        "initials": initials,
+        "access_level": "view_emergency",
         "created_at": datetime.utcnow()
-    }
+    })
     
-    db.family_members.insert_one(new_member)
-    flash('Family member added successfully!', 'success')
-    return redirect(url_for('emergency_notes'))
+    flash("Family member added with emergency notes access", "success")
+    return redirect(url_for('emergency_notes_page'))
 
-@app.route('/api/suggest-tests', methods=['POST'])
+@app.route('/family-access/remove/<member_id>', methods=['POST'])
 @login_required
-def api_suggest_tests():
-    user = db.users.find_one({"_id": ObjectId(current_user.id)})
-    if not user:
-        return jsonify({
-            "message": "Unauthorized",
-            "errors": {"auth": ["Please login"]},
-            "suggestions": None
-        }), 401
-    
-    data = request.get_json()
-    if not data:
-        return jsonify({
-            "message": "Invalid request data",
-            "errors": {"form": ["Invalid request format"]},
-            "suggestions": None
-        }), 400
+def remove_family_member(member_id):
+    user_id = ObjectId(session['user']['_id'])
+    family_members.delete_one({
+        "_id": ObjectId(member_id),
+        "user_id": user_id
+    })
+    flash("Family member access removed", "success")
+    return redirect(url_for('emergency_notes_page'))
 
-    # Validate input
-    errors = {}
-    if not data.get('age') or not isinstance(data.get('age'), int) or data['age'] <= 0:
-        errors['age'] = ["Age must be a positive number"]
-    if data.get('gender') not in ['male', 'female']:
-        errors['gender'] = ["Please select a valid gender"]
-    if not data.get('healthHistory'):
-        errors['healthHistory'] = ["Health history is required"]
-    if not data.get('labReports'):
-        errors['labReports'] = ["Lab reports are required"]
-
-    if errors:
-        return jsonify({
-            "message": "Validation failed",
-            "errors": errors,
-            "suggestions": None
-        }), 400
-
-    try:
-        # Generate prompt for AI
-        prompt = f"""
-        Suggest medical tests for a {data['age']} year old {data['gender']} based on:
-        - Health History: {data['healthHistory']}
-        - Previous Lab Reports: {data['labReports']}
-        
-        Provide:
-        1. A list of recommended tests with brief explanations
-        2. The clinical reasoning behind these suggestions
-        """
-
-        response = model.generate_content(prompt)
-        suggestions = parse_ai_response(response.text)
-
-        return jsonify({
-            "message": "Suggestions generated successfully",
-            "errors": None,
-            "suggestions": suggestions
-        })
-
-    except Exception as e:
-        print(f"Error generating suggestions: {str(e)}")
-        return jsonify({
-            "message": "An error occurred while generating suggestions",
-            "errors": None,
-            "suggestions": None
-        }), 500
-
-@app.route('/export-data')
+# PDF Exports
+@app.route('/export/health-summary')
 @login_required
-def export_data():
-    user = db.users.find_one({"_id": ObjectId(current_user.id)})
-    if not user:
-        logout_user()
-        return redirect(url_for('login'))
+def export_health_summary():
+    user_id = ObjectId(session['user']['_id'])
+    pdf_buffer = generate_pdf_export(user_id)
     
-    # Create a PDF (in-memory)
+    return send_file(
+        pdf_buffer,
+        as_attachment=True,
+        download_name=f"kobatela_health_summary_{datetime.now().strftime('%Y%m%d')}.pdf",
+        mimetype='application/pdf'
+    )
+
+@app.route('/export/medications')
+@login_required
+def export_medications():
+    user_id = ObjectId(session['user']['_id'])
+    meds = list(medications.find({"user_id": user_id}))
+    
     buffer = BytesIO()
-    p = canvas.Canvas(buffer)
+    doc = SimpleDocTemplate(buffer, pagesize=letter)
+    styles = getSampleStyleSheet()
+    story = []
     
-    # Add PDF content
-    p.drawString(100, 800, f"Health Data Export for {user['name']}")
-    p.drawString(100, 780, f"Generated on {datetime.now().strftime('%Y-%m-%d')}")
+    story.append(Paragraph("Medication List", styles['Title']))
+    story.append(Spacer(1, 12))
     
-    # Add user data
-    y_position = 750
-    p.drawString(100, y_position, "Personal Information:")
-    y_position -= 20
-    p.drawString(120, y_position, f"Name: {user.get('name', '')}")
-    y_position -= 20
-    p.drawString(120, y_position, f"Email: {user.get('email', '')}")
+    for med in meds:
+        story.append(Paragraph(f"- {med['name']} ({med['dosage']})", styles['Normal']))
+        story.append(Paragraph(f"  Frequency: {med['frequency']}", styles['Normal']))
+        if med.get('times'):
+            story.append(Paragraph(f"  Times: {', '.join(med['times'])}", styles['Normal']))
+        story.append(Spacer(1, 8))
     
-    # Add more data as needed...
-    
-    p.showPage()
-    p.save()
-    
+    doc.build(story)
     buffer.seek(0)
     return send_file(
         buffer,
         as_attachment=True,
-        download_name=f"health_export_{datetime.now().strftime('%Y%m%d')}.pdf",
+        download_name=f"medication_list_{datetime.now().strftime('%Y%m%d')}.pdf",
         mimetype='application/pdf'
     )
 
+# API Endpoints
+@app.route('/api/set-reminder', methods=['POST'])
+@login_required
+def set_reminder():
+    user_id = ObjectId(session['user']['_id'])
+    data = request.get_json()
+    
+    reminder = {
+        "user_id": user_id,
+        "type": data.get('type'),
+        "item_id": ObjectId(data.get('item_id')),
+        "title": data.get('title'),
+        "due_date": data.get('due_date'),
+        "notes": data.get('notes'),
+        "created_at": datetime.utcnow()
+    }
+    
+    col_reminders.insert_one(reminder)
+    return jsonify({"success": True, "message": "Reminder set"})
+
+@app.route('/migrate-dates')
+@login_required
+def migrate_dates():
+    if not current_user.is_admin:  # Add admin check if needed
+        abort(403)
+    
+    count = 0
+    for item in col_medical_history.find({"date": {"$type": "string"}}):
+        try:
+            new_date = datetime.strptime(item['date'], '%Y-%m-%d')
+            col_medical_history.update_one(
+                {"_id": item['_id']},
+                {"$set": {"date": new_date}}
+            )
+            count += 1
+        except Exception as e:
+            print(f"Failed to update {item['_id']}: {str(e)}")
+    
+    return f"Updated {count} records", 200
+
+@app.route('/migrate-vaccine-dates')
+@login_required
+def migrate_vaccine_dates():
+    if not session.get('user', {}).get('role') == 'admin':  # Basic admin check
+        abort(403)
+    
+    count = 0
+    for vaccine in col_vaccines.find({"$or": [{"date": {"$type": "string"}}, {"booster_due": {"$type": "string"}}]}):
+        updates = {}
+        if isinstance(vaccine.get('date'), str):
+            try:
+                updates['date'] = datetime.strptime(vaccine['date'], '%Y-%m-%d')
+            except ValueError:
+                updates['date'] = None
+        
+        if isinstance(vaccine.get('booster_due'), str):
+            try:
+                updates['booster_due'] = datetime.strptime(vaccine['booster_due'], '%Y-%m-%d')
+            except ValueError:
+                updates['booster_due'] = None
+        
+        if updates:
+            col_vaccines.update_one({"_id": vaccine["_id"]}, {"$set": updates})
+            count += 1
+    
+    return f"Successfully migrated {count} vaccine records", 200
+
 if __name__ == '__main__':
-    app.run(debug=True)  # SSL required for Google OAuth
+    app.run(debug=True)

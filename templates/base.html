@@ -1,80 +1,98 @@
 <!DOCTYPE html>
-<html lang="en" class="h-full" data-theme="light">
+<html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>{% block title %}Health Tracker{% endblock %}</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
-  <script src="https://unpkg.com/htmx.org@1.9.6"></script>
-  <script>
-    // Theme switcher
-    function setTheme(theme) {
-      document.documentElement.setAttribute('data-theme', theme);
-      localStorage.setItem('theme', theme);
-    }
-    
-    // Check for saved theme preference
-    if (localStorage.getItem('theme') === 'dark' || 
-        (!localStorage.getItem('theme') && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
-      setTheme('dark');
-    } else {
-      setTheme('light');
-    }
-  </script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kobatela - {% block title %}{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600;700&family=PT+Sans:wght@400;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link rel="icon" href="{{ url_for('static', filename='images/favicon.ico') }}">
 </head>
-<body class="min-h-screen flex flex-col">
-  <!-- Header -->
-  <header class="bg-primary text-primary-foreground py-4 shadow-md">
-    <div class="container mx-auto px-4 flex justify-between items-center">
-      <a href="{{ url_for('dashboard') }}" class="text-xl font-bold">HealthTrack</a>
-      <nav>
-        <ul class="flex space-x-6 items-center">
-          {% if current_user.is_authenticated %}
-            <li><a href="{{ url_for('dashboard') }}" class="hover:underline">Dashboard</a></li>
-            <li><a href="{{ url_for('profile') }}" class="hover:underline">Profile</a></li>
-            <li><a href="{{ url_for('medical_history') }}" class="hover:underline">History</a></li>
-            <li><a href="{{ url_for('logout') }}" class="hover:underline">Logout</a></li>
-          {% else %}
-            <li><a href="{{ url_for('login') }}" class="hover:underline">Login</a></li>
-          {% endif %}
-          <li>
-            <button onclick="setTheme(localStorage.getItem('theme') === 'dark' ? 'light' : 'dark')" 
-                    class="p-1 rounded-full hover:bg-primary/20">
-              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <circle cx="12" cy="12" r="5"></circle>
-                <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"></path>
-              </svg>
+<body>
+    <header>
+        <div class="container header-container">
+            <a href="{{ url_for('dashboard') }}" class="logo">
+                <h1>Kobatela</h1>
+            </a>
+
+            <button class="hamburger-btn" aria-label="Menu">
+                <span class="hamburger-line"></span>
+                <span class="hamburger-line"></span>
+                <span class="hamburger-line"></span>
             </button>
-          </li>
-        </ul>
-      </nav>
-    </div>
-  </header>
 
-  <!-- Main Content -->
-  <main class="flex-grow container mx-auto px-4 py-8">
-    {% with messages = get_flashed_messages(with_categories=true) %}
-      {% if messages %}
-        <div class="mb-6 space-y-2">
-          {% for category, message in messages %}
-            <div class="p-4 rounded-md 
-              {% if category == 'error' %}bg-destructive text-destructive-foreground
-              {% else %}bg-primary text-primary-foreground{% endif %}">
-              {{ message }}
-            </div>
-          {% endfor %}
+            <nav>
+                {% if 'logged_in' in session %}
+                <ul>
+                    <li><a href="{{ url_for('dashboard') }}"><i class="fas fa-home"></i> Dashboard</a></li>
+                    <li><a href="{{ url_for('profile') }}"><i class="fas fa-user"></i> Profile</a></li>
+                    <li><a href="{{ url_for('medical_history') }}"><i class="fas fa-history"></i> History</a></li>
+                    <li><a href="{{ url_for('medications') }}"><i class="fas fa-pills"></i> Medications</a></li>
+                    <li><a href="{{ url_for('vaccines_page') }}"><i class="fas fa-syringe"></i> Vaccines</a></li>
+                    <li><a href="{{ url_for('lab_reports_page') }}"><i class="fas fa-flask"></i> Labs & AI</a></li>
+                </ul>
+                <div class="user-menu">
+                    <span>{{ session.user.name }}</span>
+                    <a href="{{ url_for('logout') }}" class="btn btn-outline btn-sm">
+                        <i class="fas fa-sign-out-alt"></i> Logout
+                    </a>
+                </div>
+                {% endif %}
+            </nav>
         </div>
-      {% endif %}
-    {% endwith %}
-    
-    {% block content %}{% endblock %}
-  </main>
+    </header>
 
-  <!-- Footer -->
-  <footer class="bg-secondary text-secondary-foreground py-6">
-    <div class="container mx-auto px-4 text-center">
-      <p>© {{ now.year }} HealthTrack. All rights reserved.</p>
-    </div>
-  </footer>
+    <main class="container">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                <div class="alert alert-{{ category }}">
+                    {{ message }}
+                </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        {% block content %}{% endblock %}
+    </main>
+
+    <footer>
+        <div class="container">
+            <p>&copy; {{ now.year }} Kobatela. Your Personal Health Record.</p>
+        </div>
+    </footer>
+
+    <script>
+        // Hamburger menu functionality
+        document.addEventListener('DOMContentLoaded', function() {
+            const hamburgerBtn = document.querySelector('.hamburger-btn');
+            const navMenu = document.querySelector('.nav-menu');
+            
+            hamburgerBtn.addEventListener('click', function() {
+                this.classList.toggle('active');
+                navMenu.classList.toggle('active');
+                
+                // Prevent scrolling when menu is open
+                if (navMenu.classList.contains('active')) {
+                    document.body.style.overflow = 'hidden';
+                } else {
+                    document.body.style.overflow = '';
+                }
+            });
+            
+            // Close menu when clicking on a link
+            const navLinks = document.querySelectorAll('.nav-links a');
+            navLinks.forEach(link => {
+                link.addEventListener('click', function() {
+                    hamburgerBtn.classList.remove('active');
+                    navMenu.classList.remove('active');
+                    document.body.style.overflow = '';
+                });
+            });
+        });
+    </script>
+
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
 </body>
 </html>
