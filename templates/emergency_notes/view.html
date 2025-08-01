@@ -1,0 +1,200 @@
+{% extends "layout.html" %}
+
+{% block title %}Emergency Notes{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2>Emergency Information</h2>
+    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#emergencyModal">
+        <i class="fas fa-edit"></i> Edit
+    </button>
+</div>
+
+<div class="row">
+    <div class="col-lg-8">
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="card-title mb-0">Medical Information</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-4 mb-3">
+                        <h6>Blood Type</h6>
+                        <p class="text-muted">{{ notes.blood_type if notes and notes.blood_type else 'Not specified' }}</p>
+                    </div>
+                    <div class="col-md-8 mb-3">
+                        <h6>Allergies</h6>
+                        <p class="text-muted">{{ notes.allergies if notes and notes.allergies else 'No known allergies' }}</p>
+                    </div>
+                </div>
+                
+                <div class="mb-3">
+                    <h6>Medical Conditions</h6>
+                    <p class="text-muted">{{ notes.medical_conditions if notes and notes.medical_conditions else 'No medical conditions specified' }}</p>
+                </div>
+                
+                {% if notes and notes.files %}
+                <div class="mb-3">
+                    <h6>Emergency Documents</h6>
+                    <div class="list-group">
+                        {% for file in notes.files %}
+                        <a href="{{ url_for('static', filename='uploads/emergency/' + file) }}" target="_blank" class="list-group-item list-group-item-action">
+                            <i class="fas fa-file me-2"></i> {{ file }}
+                        </a>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        
+        <div class="card">
+            <div class="card-header">
+                <h5 class="card-title mb-0">Emergency Contacts</h5>
+            </div>
+            <div class="card-body">
+                {% if notes and notes.emergency_contacts %}
+                <div class="table-responsive">
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Relationship</th>
+                                <th>Phone</th>
+                                <th>Email</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for contact in notes.emergency_contacts.split('\n') %}
+                            {% if contact %}
+                            {% set parts = contact.split('|') %}
+                            <tr>
+                                <td>{{ parts[0] }}</td>
+                                <td>{{ parts[1] if parts|length > 1 else '' }}</td>
+                                <td>{{ parts[2] if parts|length > 2 else '' }}</td>
+                                <td>{{ parts[3] if parts|length > 3 else '' }}</td>
+                            </tr>
+                            {% endif %}
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <p class="text-muted">No emergency contacts specified</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-lg-4">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="card-title mb-0">Family Access</h5>
+            </div>
+            <div class="card-body">
+                {% if family %}
+                <ul class="list-group list-group-flush">
+                    {% for member in family %}
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="mb-0">{{ member.name }}</h6>
+                            <small class="text-muted">{{ member.relation }}</small>
+                        </div>
+                        <form method="POST" action="{{ url_for('family_members_delete', member_id=member._id) }}" class="d-inline">
+                            <button type="submit" class="btn btn-sm btn-outline-danger">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </form>
+                    </li>
+                    {% endfor %}
+                </ul>
+                {% else %}
+                <p class="text-muted">No family members added</p>
+                {% endif %}
+                
+                <hr>
+                
+                <form method="POST" class="mt-3">
+                    <div class="mb-3">
+                        <label class="form-label">Add Family Member</label>
+                        <input type="email" class="form-control" name="email" placeholder="Family member's email" required>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label">Relationship</label>
+                            <input type="text" class="form-control" name="relation" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Access Level</label>
+                            <select class="form-select" name="access_level" required>
+                                <option value="view_emergency">View Emergency Info</option>
+                                <option value="view_all">View All Records</option>
+                            </select>
+                        </div>
+                    </div>
+                    <button type="submit" class="btn btn-primary w-100">Add Family Member</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Emergency Notes Modal -->
+<div class="modal fade" id="emergencyModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Edit Emergency Information</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="POST" enctype="multipart/form-data">
+                <div class="modal-body">
+                    <div class="row mb-3">
+                        <div class="col-md-4">
+                            <label class="form-label">Blood Type</label>
+                            <select class="form-select" name="blood_type">
+                                <option value="">Select</option>
+                                <option value="A+" {% if notes and notes.blood_type == 'A+' %}selected{% endif %}>A+</option>
+                                <option value="A-" {% if notes and notes.blood_type == 'A-' %}selected{% endif %}>A-</option>
+                                <option value="B+" {% if notes and notes.blood_type == 'B+' %}selected{% endif %}>B+</option>
+                                <option value="B-" {% if notes and notes.blood_type == 'B-' %}selected{% endif %}>B-</option>
+                                <option value="AB+" {% if notes and notes.blood_type == 'AB+' %}selected{% endif %}>AB+</option>
+                                <option value="AB-" {% if notes and notes.blood_type == 'AB-' %}selected{% endif %}>AB-</option>
+                                <option value="O+" {% if notes and notes.blood_type == 'O+' %}selected{% endif %}>O+</option>
+                                <option value="O-" {% if notes and notes.blood_type == 'O-' %}selected{% endif %}>O-</option>
+                            </select>
+                        </div>
+                        <div class="col-md-8">
+                            <label class="form-label">Allergies</label>
+                            <input type="text" class="form-control" name="allergies" 
+                                   value="{{ notes.allergies if notes and notes.allergies else '' }}" 
+                                   placeholder="List any allergies separated by commas">
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Medical Conditions</label>
+                        <textarea class="form-control" name="medical_conditions" rows="3">{{ notes.medical_conditions if notes and notes.medical_conditions else '' }}</textarea>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Emergency Contacts</label>
+                        <textarea class="form-control" name="emergency_contacts" rows="5" 
+                                  placeholder="Format: Name|Relationship|Phone|Email (one per line)">{{ notes.emergency_contacts if notes and notes.emergency_contacts else '' }}</textarea>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Emergency Documents</label>
+                        <input class="form-control" type="file" name="emergency_files" multiple>
+                        <small class="text-muted">Upload important documents like insurance cards, advance directives, etc.</small>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save Changes</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

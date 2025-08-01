@@ -1,103 +1,156 @@
-{% extends "base.html" %}
-{% block title %}Profile{% endblock %}
+{% extends "layout.html" %}
+
+{% block title %}My Profile{% endblock %}
 
 {% block content %}
-<section class="profile-section">
-    <div class="container">
-        <div class="card profile-card">
-            <div class="card-header">
-                <h2>Personal Information</h2>
-                <p class="text-muted">Update your profile details and demographic information</p>
+<div class="row">
+    <div class="col-lg-4">
+        <div class="card mb-4">
+            <div class="card-body text-center">
+                <img src="{{ user.avatar_url or url_for('static', filename='images/default-avatar.png') }}" 
+                     alt="Profile Picture" class="rounded-circle img-fluid" style="width: 150px;">
+                <h5 class="my-3">{{ user.name }}</h5>
+                <p class="text-muted mb-1">{{ user.email }}</p>
+                <p class="text-muted mb-4">
+                    {% if user.age %}Age: {{ user.age }}{% endif %}
+                    {% if user.gender %} | {{ user.gender|capitalize }}{% endif %}
+                </p>
+                
+                <div class="d-flex justify-content-center mb-2">
+                    <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#avatarModal">
+                        Change Avatar
+                    </button>
+                </div>
             </div>
-            
+        </div>
+        
+        <div class="card mb-4">
             <div class="card-body">
-                <form method="POST" enctype="multipart/form-data" class="profile-form">
-                    <div class="avatar-upload">
-                        <div class="avatar-preview">
-                            {% if user.avatar_url %}
-                            <img src="{{ user.avatar_url }}" alt="Profile Picture" id="avatarPreview">
-                            {% else %}
-                            <div class="avatar-placeholder">
-                                <i class="fas fa-user"></i>
-                            </div>
-                            {% endif %}
+                <h5 class="card-title">Quick Links</h5>
+                <ul class="list-group list-group-flush">
+                    <li class="list-group-item d-flex justify-content-between align-items-center p-0 py-2">
+                        <a href="{{ url_for('export_health_summary') }}" class="text-decoration-none">
+                            <i class="fas fa-file-pdf me-2"></i> Export Health Summary
+                        </a>
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between align-items-center p-0 py-2">
+                        <a href="{{ url_for('export_medications') }}" class="text-decoration-none">
+                            <i class="fas fa-pills me-2"></i> Export Medications
+                        </a>
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between align-items-center p-0 py-2">
+                        <a href="{{ url_for('export_vaccines') }}" class="text-decoration-none">
+                            <i class="fas fa-syringe me-2"></i> Export Vaccines
+                        </a>
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between align-items-center p-0 py-2">
+                        <a href="{{ url_for('export_vaccines') }}" class="text-decoration-none">
+                            <i class="fas fa-syringe me-2"></i> Export Lab Reports
+                        </a>
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between align-items-center p-0 py-2">
+                        <a href="{{ url_for('export_vaccines') }}" class="text-decoration-none">
+                            <i class="fas fa-syringe me-2"></i> Export Medical History
+                        </a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-lg-8">
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="card-title mb-0">Personal Information</h5>
+            </div>
+            <div class="card-body">
+                <form method="POST" enctype="multipart/form-data">
+                    <div class="row mb-3">
+                        <div class="col-sm-6">
+                            <label class="form-label">Full Name</label>
+                            <input type="text" class="form-control" name="name" value="{{ user.name }}" required>
                         </div>
-                        <div class="avatar-upload-controls">
-                            <input type="file" id="avatar" name="avatar" accept="image/*" style="display: none;">
-                            <button type="button" class="btn btn-outline" onclick="document.getElementById('avatar').click()">
-                                <i class="fas fa-camera"></i> Change Photo
-                            </button>
-                            <small class="text-muted">JPG, GIF or PNG. Max size 2MB</small>
+                        <div class="col-sm-6">
+                            <label class="form-label">Email</label>
+                            <input type="email" class="form-control" name="email" value="{{ user.email }}" required>
                         </div>
                     </div>
-
-                    <div class="form-grid">
-                        <div class="form-group">
-                            <label for="name" class="form-label">Full Name</label>
-                            <input type="text" id="name" name="name" class="form-control" value="{{ user.name }}">
+                    
+                    <div class="row mb-3">
+                        <div class="col-sm-4">
+                            <label class="form-label">Age</label>
+                            <input type="number" class="form-control" name="age" value="{{ user.age if user.age }}">
                         </div>
-
-                        <div class="form-group">
-                            <label for="email" class="form-label">Email Address</label>
-                            <input type="email" id="email" name="email" class="form-control" value="{{ user.email }}" readonly>
-                        </div>
-
-                        <div class="form-group">
-                            <label for="age" class="form-label">Age</label>
-                            <input type="number" id="age" name="age" class="form-control" value="{{ user.age or '' }}">
-                        </div>
-
-                        <div class="form-group">
-                            <label for="weight" class="form-label">Weight (kg)</label>
-                            <input type="number" id="weight" name="weight" class="form-control" value="{{ user.weight or '' }}">
-                        </div>
-
-                        <div class="form-group">
-                            <label for="gender" class="form-label">Gender</label>
-                            <select id="gender" name="gender" class="form-control">
-                                <option value="">Select gender...</option>
+                        <div class="col-sm-4">
+                            <label class="form-label">Gender</label>
+                            <select class="form-select" name="gender">
+                                <option value="">Select</option>
                                 <option value="male" {% if user.gender == 'male' %}selected{% endif %}>Male</option>
                                 <option value="female" {% if user.gender == 'female' %}selected{% endif %}>Female</option>
                                 <option value="other" {% if user.gender == 'other' %}selected{% endif %}>Other</option>
                             </select>
                         </div>
+                        <div class="col-sm-4">
+                            <label class="form-label">Weight (kg)</label>
+                            <input type="number" step="0.1" class="form-control" name="weight" value="{{ user.weight if user.weight }}">
+                        </div>
                     </div>
-
-                    <div class="form-actions">
-                        <button type="submit" class="btn btn-primary">
-                            <i class="fas fa-save"></i> Save Changes
-                        </button>
+                    
+                    <div class="mb-3">
+                        <button type="submit" class="btn btn-primary">Update Profile</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+        
+        <div class="card">
+            <div class="card-header">
+                <h5 class="card-title mb-0">Change Password</h5>
+            </div>
+            <div class="card-body">
+                <form method="POST">
+                    <div class="mb-3">
+                        <label class="form-label">Current Password</label>
+                        <input type="password" class="form-control" name="current_password">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">New Password</label>
+                        <input type="password" class="form-control" name="new_password">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Confirm New Password</label>
+                        <input type="password" class="form-control" name="confirm_password">
+                    </div>
+                    <div class="mb-3">
+                        <button type="submit" class="btn btn-primary">Change Password</button>
                     </div>
                 </form>
             </div>
         </div>
     </div>
-</section>
+</div>
 
-<script>
-    // Preview the selected image
-    document.getElementById('avatar').addEventListener('change', function(e) {
-        const preview = document.getElementById('avatarPreview');
-        const placeholder = document.querySelector('.avatar-placeholder');
-        
-        if (this.files && this.files[0]) {
-            const reader = new FileReader();
-            
-            reader.onload = function(e) {
-                if (placeholder) placeholder.style.display = 'none';
-                if (!preview) {
-                    const img = document.createElement('img');
-                    img.id = 'avatarPreview';
-                    img.src = e.target.result;
-                    img.alt = 'Profile Preview';
-                    document.querySelector('.avatar-preview').prepend(img);
-                } else {
-                    preview.src = e.target.result;
-                }
-            }
-            
-            reader.readAsDataURL(this.files[0]);
-        }
-    });
-</script>
+<!-- Avatar Modal -->
+<div class="modal fade" id="avatarModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Change Profile Picture</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="POST" enctype="multipart/form-data">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Select Image</label>
+                        <input class="form-control" type="file" name="avatar" accept="image/*">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Upload</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
 {% endblock %}

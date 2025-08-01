@@ -42,10 +42,7 @@ app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 # Database setup
-client = MongoClient(
-    os.getenv("MONGO_URI"),
-    tlsAllowInvalidCertificates=True  # This bypasses SSL verification
-)
+client = MongoClient(os.getenv("MONGO_URI"))
 db = client.kobatela
 
 # Collections
@@ -96,7 +93,6 @@ class UserService:
             {"$set": updates}
         )
 
-
 class MedicalHistoryService:
     @staticmethod
     def get_all(user_id):
@@ -139,19 +135,6 @@ class MedicalHistoryService:
     
     @staticmethod
     def delete(entry_id, user_id):
-        # First get the entry to check for filename
-        entry = col_medical_history.find_one({
-            "_id": ObjectId(entry_id),
-            "user_id": ObjectId(user_id)
-        })
-    
-        # Delete the associated file if it exists
-        if entry and entry.get('filename'):
-            filepath = os.path.join(app.config['UPLOAD_FOLDER'], 'medical_history', entry['filename'])
-            if os.path.exists(filepath):
-                os.remove(filepath)
-    
-        # Delete the database entry
         return col_medical_history.delete_one({
             "_id": ObjectId(entry_id),
             "user_id": ObjectId(user_id)
@@ -393,8 +376,6 @@ def medical_history_create():
         
         if file and allowed_file(file.filename):
             filename = secure_filename(f"{user_id}_{datetime.now().timestamp()}.{file.filename.rsplit('.', 1)[1].lower()}")
-            # Create medical_history subfolder if it doesn't exist
-            os.makedirs(os.path.join(app.config['UPLOAD_FOLDER'], 'medical_history'), exist_ok=True)
             file.save(os.path.join(app.config['UPLOAD_FOLDER'], 'medical_history', filename))
         
         try:
@@ -417,31 +398,8 @@ def medical_history_edit(entry_id):
         return redirect(url_for('medical_history_list'))
     
     if request.method == 'POST':
-        file = request.files.get('attachment')
-        filename = entry.get('filename')
-        
-        if file and allowed_file(file.filename):
-            # Delete old file if it exists
-            if filename:
-                old_filepath = os.path.join(app.config['UPLOAD_FOLDER'], 'medical_history', filename)
-                if os.path.exists(old_filepath):
-                    os.remove(old_filepath)
-            
-            # Save new file
-            filename = secure_filename(f"{user_id}_{datetime.now().timestamp()}.{file.filename.rsplit('.', 1)[1].lower()}")
-            os.makedirs(os.path.join(app.config['UPLOAD_FOLDER'], 'medical_history'), exist_ok=True)
-            file.save(os.path.join(app.config['UPLOAD_FOLDER'], 'medical_history', filename))
-        
         try:
             MedicalHistoryService.update(entry_id, user_id, request.form)
-            
-            # Update filename in database if new file was uploaded
-            if file and allowed_file(file.filename):
-                col_medical_history.update_one(
-                    {"_id": ObjectId(entry_id)},
-                    {"$set": {"filename": filename}}
-                )
-            
             flash('Entry updated successfully', 'success')
             return redirect(url_for('medical_history_list'))
         except Exception as e:
@@ -547,35 +505,6 @@ def api_medical_history_create():
         }), 201
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 400
-
-@app.route('/view/medical-history/<entry_id>')
-@login_required
-def view_medical_history_attachment(entry_id):
-    user_id = session['user']['_id']
-    entry = MedicalHistoryService.get_by_id(entry_id, user_id)
-    
-    if not entry or not entry.get('filename'):
-        flash('File not found', 'error')
-        return redirect(url_for('medical_history_list'))
-    
-    filepath = os.path.join(app.config['UPLOAD_FOLDER'], 'medical_history', entry['filename'])
-    
-    if not os.path.exists(filepath):
-        flash('File no longer available', 'error')
-        return redirect(url_for('medical_history_list'))
-    
-    # For images and PDFs, we can display them in the browser
-    file_ext = entry['filename'].split('.')[-1].lower()
-    
-    if file_ext in ['png', 'jpg', 'jpeg', 'pdf']:
-        return send_file(filepath)
-    else:
-        # For other file types, force download
-        return send_file(
-            filepath,
-            as_attachment=True,
-            download_name=os.path.basename(entry['filename'])
-        )
 
 # Similar API endpoints would be created for other resources
 
@@ -884,8 +813,6 @@ def lab_reports_create():
         
         if file and allowed_file(file.filename):
             filename = secure_filename(f"{user_id}_{datetime.now().timestamp()}.{file.filename.rsplit('.', 1)[1].lower()}")
-            # Save in lab_reports subfolder
-            os.makedirs(os.path.join(app.config['UPLOAD_FOLDER'], 'lab_reports'), exist_ok=True)
             file.save(os.path.join(app.config['UPLOAD_FOLDER'], 'lab_reports', filename))
         
         try:
@@ -909,48 +836,6 @@ def lab_reports_delete(report_id):
         flash('Lab report not found or could not be deleted', 'error')
     
     return redirect(url_for('lab_reports_list'))
-
-@app.route('/lab-reports/<report_id>/edit', methods=['GET', 'POST'])
-@login_required
-def lab_reports_edit(report_id):
-    user_id = session['user']['_id']
-    report = LabReportService.get_by_id(report_id, user_id)
-    
-    if not report:
-        flash('Lab report not found', 'error')
-        return redirect(url_for('lab_reports_list'))
-    
-    if request.method == 'POST':
-        try:
-            file = request.files.get('report_file')
-            filename = report.get('filename')
-            
-            if file and allowed_file(file.filename):
-                # Delete old file if it exists
-                if filename:
-                    old_filepath = os.path.join(app.config['UPLOAD_FOLDER'], 'lab_reports', filename)
-                    if os.path.exists(old_filepath):
-                        os.remove(old_filepath)
-                
-                # Save new file
-                filename = secure_filename(f"{user_id}_{datetime.now().timestamp()}.{file.filename.rsplit('.', 1)[1].lower()}")
-                os.makedirs(os.path.join(app.config['UPLOAD_FOLDER'], 'lab_reports'), exist_ok=True)
-                file.save(os.path.join(app.config['UPLOAD_FOLDER'], 'lab_reports', filename))
-            
-            LabReportService.update(report_id, user_id, request.form)
-            
-            if file and allowed_file(file.filename):
-                col_lab_reports.update_one(
-                    {"_id": ObjectId(report_id)},
-                    {"$set": {"filename": filename}}
-                )
-            
-            flash('Lab report updated successfully', 'success')
-            return redirect(url_for('lab_reports_list'))
-        except Exception as e:
-            flash(f'Error updating lab report: {str(e)}', 'error')
-    
-    return render_template('lab_reports/edit.html', report=report)
 
 # Emergency Notes Routes
 @app.route('/emergency-notes', methods=['GET', 'POST'])
@@ -1282,8 +1167,7 @@ def download_medical_history_attachment(entry_id):
         flash('File not found', 'error')
         return redirect(url_for('medical_history_list'))
     
-    # Add the medical_history subfolder to the path
-    filepath = os.path.join(app.config['UPLOAD_FOLDER'], 'medical_history', entry['filename'])
+    filepath = os.path.join(app.config['UPLOAD_FOLDER'], entry['filename'])
     
     if not os.path.exists(filepath):
         flash('File no longer available', 'error')
@@ -1305,7 +1189,7 @@ def download_lab_report(report_id):
         flash('Report not found', 'error')
         return redirect(url_for('lab_reports_list'))
     
-    filepath = os.path.join(app.config['UPLOAD_FOLDER'], 'lab_reports', report['filename'])
+    filepath = os.path.join(app.config['UPLOAD_FOLDER'], report['filename'])
     
     if not os.path.exists(filepath):
         flash('Report file no longer available', 'error')
@@ -1317,33 +1201,6 @@ def download_lab_report(report_id):
         download_name=f"lab_report_{report['name']}_{report['date'].strftime('%Y%m%d') if report.get('date') else 'nodate'}.{report['filename'].split('.')[-1]}"
     )
 
-@app.route('/api/health-recommendations')
-@login_required
-def api_health_recommendations():
-    user_id = session['user']['_id']
-    user = UserService.get_by_id(user_id)
-    
-    if not user.get('age') or not user.get('gender'):
-        return jsonify({'success': False, 'error': 'Incomplete profile'})
-    
-    try:
-        model = genai.GenerativeModel('gemini-pro')
-        prompt = f"""
-        Suggest 4-6 health screening tests for a {user['age']} year old {user['gender']}.
-        For each test, provide:
-        - A short name (max 3 words)
-        - Brief description (1 sentence)
-        - Recommended frequency (e.g., 'annually')
-        
-        Return as JSON with 'suggestions' array containing objects with these fields:
-        name, description, frequency
-        """
-        response = model.generate_content(prompt)
-        suggestions = json.loads(response.text).get('suggestions', [])
-        
-        return jsonify({'success': True, 'suggestions': suggestions})
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)})
 
 if __name__ == '__main__':
     app.run(debug=True)

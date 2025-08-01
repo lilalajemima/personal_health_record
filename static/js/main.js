@@ -1,152 +1,87 @@
+// Initialize tooltips
 document.addEventListener('DOMContentLoaded', function() {
-    // Handle form submissions with fetch API
-    const forms = document.querySelectorAll('form[data-ajax]');
-    
-    forms.forEach(form => {
-        form.addEventListener('submit', async function(e) {
-            e.preventDefault();
-            
-            const formData = new FormData(form);
-            const submitBtn = form.querySelector('button[type="submit"]');
-            const originalText = submitBtn.textContent;
-            
-            try {
-                submitBtn.disabled = true;
-                submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing...';
-                
-                const response = await fetch(form.action, {
-                    method: form.method,
-                    body: formData,
-                    headers: {
-                        'Accept': 'application/json'
-                    }
-                });
-                
-                const data = await response.json();
-                
-                if (response.ok) {
-                    if (data.redirect) {
-                        window.location.href = data.redirect;
-                    } else {
-                        // Handle success (e.g., show message)
-                        showAlert('success', data.message || 'Action completed successfully');
-                        form.reset();
-                    }
-                } else {
-                    showAlert('error', data.error || 'An error occurred');
-                }
-            } catch (error) {
-                showAlert('error', 'Network error occurred');
-                console.error('Error:', error);
-            } finally {
-                submitBtn.disabled = false;
-                submitBtn.textContent = originalText;
-            }
-        });
+    // Enable Bootstrap tooltips
+    var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+    var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+        return new bootstrap.Tooltip(tooltipTriggerEl);
     });
     
-    // Show alert function
-    function showAlert(type, message) {
-        const alertDiv = document.createElement('div');
-        alertDiv.className = `alert alert-${type}`;
-        alertDiv.textContent = message;
-        
-        const container = document.querySelector('main.container');
-        if (container) {
-            container.insertBefore(alertDiv, container.firstChild);
-            
-            // Remove alert after 5 seconds
-            setTimeout(() => {
-                alertDiv.remove();
-            }, 5000);
-        }
-    }
-    
-    // Handle file upload previews
-    const fileInputs = document.querySelectorAll('input[type="file"]');
-    fileInputs.forEach(input => {
-        input.addEventListener('change', function() {
-            const previewId = this.dataset.preview;
-            if (!previewId) return;
-            
-            const preview = document.getElementById(previewId);
-            const file = this.files[0];
-            
-            if (file && file.type.startsWith('image/')) {
-                const reader = new FileReader();
-                reader.onload = function(e) {
-                    preview.src = e.target.result;
-                    preview.style.display = 'block';
-                }
-                reader.readAsDataURL(file);
-            }
-        });
-    });
-    
-    // Initialize date pickers
-    const dateInputs = document.querySelectorAll('input[type="date"]');
-    dateInputs.forEach(input => {
-        if (!input.value) {
-            const today = new Date().toISOString().split('T')[0];
-            input.value = today;
-        }
-    });
-});
-
-document.addEventListener('DOMContentLoaded', function() {
-    // Avatar preview functionality
-    const avatarInput = document.getElementById('avatar');
-    if (avatarInput) {
-        avatarInput.addEventListener('change', function(e) {
-            const file = e.target.files[0];
-            if (file) {
-                const reader = new FileReader();
-                reader.onload = function(event) {
-                    const preview = document.getElementById('avatarPreview');
-                    if (preview) {
-                        preview.src = event.target.result;
-                    } else {
-                        const placeholder = document.querySelector('.avatar-placeholder');
-                        if (placeholder) {
-                            placeholder.innerHTML = `<img src="${event.target.result}" id="avatarPreview">`;
-                        }
-                    }
-                };
-                reader.readAsDataURL(file);
-            }
-        });
-    }
-
-    // Form validation
-    const forms = document.querySelectorAll('form');
-    forms.forEach(form => {
-        form.addEventListener('submit', function(e) {
-            let valid = true;
-            const requiredFields = form.querySelectorAll('[required]');
-            
-            requiredFields.forEach(field => {
-                if (!field.value.trim()) {
-                    field.classList.add('is-invalid');
-                    valid = false;
-                } else {
-                    field.classList.remove('is-invalid');
-                }
-            });
-
-            if (!valid) {
-                e.preventDefault();
-                alert('Please fill in all required fields');
-            }
-        });
-    });
-
     // Flash message auto-dismiss
-    const alerts = document.querySelectorAll('.alert');
-    alerts.forEach(alert => {
-        setTimeout(() => {
-            alert.style.opacity = '0';
-            setTimeout(() => alert.remove(), 300);
+    var alerts = document.querySelectorAll('.alert');
+    alerts.forEach(function(alert) {
+        setTimeout(function() {
+            bootstrap.Alert.getInstance(alert).close();
         }, 5000);
     });
+    
+    // Form validation
+    var forms = document.querySelectorAll('.needs-validation');
+    Array.prototype.slice.call(forms).forEach(function(form) {
+        form.addEventListener('submit', function(event) {
+            if (!form.checkValidity()) {
+                event.preventDefault();
+                event.stopPropagation();
+            }
+            form.classList.add('was-validated');
+        }, false);
+    });
+    
+    // Timezone detection
+    if (document.getElementById('timezone')) {
+        document.getElementById('timezone').value = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    }
+    
+    // Password strength meter
+    if (document.getElementById('password')) {
+        document.getElementById('password').addEventListener('input', function() {
+            var password = this.value;
+            var strength = 0;
+            
+            if (password.length >= 8) strength++;
+            if (password.match(/[a-z]/)) strength++;
+            if (password.match(/[A-Z]/)) strength++;
+            if (password.match(/[0-9]/)) strength++;
+            if (password.match(/[^a-zA-Z0-9]/)) strength++;
+            
+            var meter = document.getElementById('password-strength-meter');
+            if (meter) {
+                meter.value = strength;
+                meter.className = 'form-range strength-' + strength;
+            }
+        });
+    }
+    
+    // File input preview
+    document.querySelectorAll('.file-input-preview').forEach(function(input) {
+        input.addEventListener('change', function() {
+            var preview = document.getElementById(this.dataset.previewTarget);
+            if (preview) {
+                if (this.files && this.files[0]) {
+                    var reader = new FileReader();
+                    reader.onload = function(e) {
+                        preview.src = e.target.result;
+                        preview.style.display = 'block';
+                    };
+                    reader.readAsDataURL(this.files[0]);
+                } else {
+                    preview.style.display = 'none';
+                }
+            }
+        });
+    });
+    
+    // Dark mode toggle
+    var darkModeToggle = document.getElementById('darkModeToggle');
+    if (darkModeToggle) {
+        darkModeToggle.addEventListener('click', function() {
+            document.body.classList.toggle('dark-mode');
+            localStorage.setItem('darkMode', document.body.classList.contains('dark-mode'));
+        });
+        
+        // Check for saved dark mode preference
+        if (localStorage.getItem('darkMode') === 'true') {
+            document.body.classList.add('dark-mode');
+            darkModeToggle.checked = true;
+        }
+    }
 });
-

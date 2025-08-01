@@ -1,0 +1,61 @@
+{% extends "layout.html" %}
+
+{% block title %}Edit Medication{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <div class="card">
+            <div class="card-header">
+                <h4 class="card-title mb-0">Edit Medication</h4>
+            </div>
+            <div class="card-body">
+                <form method="POST">
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label">Medication Name</label>
+                            <input type="text" class="form-control" name="name" value="{{ medication.name }}" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Dosage</label>
+                            <input type="text" class="form-control" name="dosage" value="{{ medication.dosage }}" required>
+                        </div>
+                    </div>
+                    
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label">Frequency</label>
+                            <select class="form-select" name="frequency" required>
+                                <option value="daily" {% if medication.frequency == 'daily' %}selected{% endif %}>Daily</option>
+                                <option value="weekly" {% if medication.frequency == 'weekly' %}selected{% endif %}>Weekly</option>
+                                <option value="monthly" {% if medication.frequency == 'monthly' %}selected{% endif %}>Monthly</option>
+                                <option value="as needed" {% if medication.frequency == 'as needed' %}selected{% endif %}>As Needed</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Times (for daily)</label>
+                            <select class="form-select" name="times" multiple>
+                                <option value="morning" {% if 'morning' in medication.times %}selected{% endif %}>Morning</option>
+                                <option value="afternoon" {% if 'afternoon' in medication.times %}selected{% endif %}>Afternoon</option>
+                                <option value="evening" {% if 'evening' in medication.times %}selected{% endif %}>Evening</option>
+                                <option value="night" {% if 'night' in medication.times %}selected{% endif %}>Night</option>
+                            </select>
+                            <small class="text-muted">Hold Ctrl/Cmd to select multiple</small>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Notes</label>
+                        <textarea class="form-control" name="notes" rows="3">{{ medication.notes or '' }}</textarea>
+                    </div>
+                    
+                    <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                        <a href="{{ url_for('medications_list') }}" class="btn btn-secondary">Cancel</a>
+                        <button type="submit" class="btn btn-primary">Update Medication</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

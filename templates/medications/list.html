@@ -1,0 +1,207 @@
+{% extends "layout.html" %}
+
+{% block title %}Medications{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2>My Medications</h2>
+    <div>
+        <a href="{{ url_for('export_medications') }}" class="btn btn-outline-secondary me-2">
+            <i class="fas fa-file-pdf"></i> Export
+        </a>
+        <a href="{{ url_for('medications_create') }}" class="btn btn-primary">
+            <i class="fas fa-plus"></i> Add New
+        </a>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-body">
+        {% if medications %}
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th>Medication</th>
+                        <th>Dosage</th>
+                        <th>Frequency</th>
+                        <th>Times</th>
+                        <th>Notes</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for med in medications %}
+                    <tr>
+                        <td>{{ med.name }}</td>
+                        <td>{{ med.dosage }}</td>
+                        <td>{{ med.frequency }}</td>
+                        <td>
+                            {% if med.times %}
+                            <div class="d-flex flex-wrap gap-1">
+                                {% for time in med.times %}
+                                <span class="badge bg-primary">{{ time }}</span>
+                                {% endfor %}
+                            </div>
+                            {% else %}
+                            N/A
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if med.notes %}
+                            <a href="#" data-bs-toggle="tooltip" title="{{ med.notes }}">
+                                {{ med.notes|truncate(20) }}
+                            </a>
+                            {% else %}
+                            N/A
+                            {% endif %}
+                        </td>
+                        <td>
+                            <div class="btn-group btn-group-sm">
+                                <a href="{{ url_for('medications_edit', med_id=med._id) }}" 
+                                   class="btn btn-outline-primary" title="Edit">
+                                    <i class="fas fa-edit"></i>
+                                </a>
+                                <form method="POST" action="{{ url_for('medications_delete', med_id=med._id) }}" 
+                                      class="d-inline" onsubmit="return confirm('Delete this medication?');">
+                                    <button type="submit" class="btn btn-outline-danger" title="Delete">
+                                        <i class="fas fa-trash"></i>
+                                    </button>
+                                </form>
+                                {% if med.frequency == 'daily' and med.times %}
+                                <button class="btn btn-outline-success" title="Schedule"
+                                        data-bs-toggle="modal" data-bs-target="#scheduleModal{{ loop.index }}">
+                                    <i class="fas fa-clock"></i>
+                                </button>
+                                {% endif %}
+                            </div>
+                            
+                            <!-- Schedule Modal -->
+                            {% if med.frequency == 'daily' and med.times %}
+                            <div class="modal fade" id="scheduleModal{{ loop.index }}" tabindex="-1">
+                                <div class="modal-dialog">
+                                    <div class="modal-content">
+                                        <div class="modal-header">
+                                            <h5 class="modal-title">Medication Schedule - {{ med.name }}</h5>
+                                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                        </div>
+                                        <div class="modal-body">
+                                            <div class="schedule-times">
+                                                {% for time in med.times %}
+                                                <div class="time-slot mb-3">
+                                                    <h6>{{ time|capitalize }}</h6>
+                                                    <div class="form-check form-switch">
+                                                        <input class="form-check-input" type="checkbox" id="reminder{{ loop.index }}">
+                                                        <label class="form-check-label" for="reminder{{ loop.index }}">
+                                                            Set Reminder
+                                                        </label>
+                                                    </div>
+                                                    <div class="time-input mt-2">
+                                                        <label>Reminder Time</label>
+                                                        <input type="time" class="form-control" value="08:00">
+                                                    </div>
+                                                </div>
+                                                {% endfor %}
+                                            </div>
+                                        </div>
+                                        <div class="modal-footer">
+                                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                                            <button type="button" class="btn btn-primary">Save Schedule</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="text-center py-5">
+            <i class="fas fa-pills fa-3x text-muted mb-3"></i>
+            <h5>No medications added yet</h5>
+            <p class="text-muted">Add your medications to keep track of them</p>
+            <a href="{{ url_for('medications_create') }}" class="btn btn-primary">
+                <i class="fas fa-plus"></i> Add Medication
+            </a>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Medication Summary Card -->
+{% if medications %}
+<div class="card mt-4">
+    <div class="card-header">
+        <h5 class="card-title mb-0">Medication Summary</h5>
+    </div>
+    <div class="card-body">
+        <div class="row">
+            <div class="col-md-6">
+                <h6>Daily Medications</h6>
+                <ul class="list-group">
+                    {% for med in medications if med.frequency == 'daily' %}
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        {{ med.name }} ({{ med.dosage }})
+                        <span class="badge bg-primary rounded-pill">
+                            {{ med.times|length }} time{% if med.times|length > 1 %}s{% endif %}/day
+                        </span>
+                    </li>
+                    {% endfor %}
+                </ul>
+            </div>
+            <div class="col-md-6">
+                <h6>Other Medications</h6>
+                <ul class="list-group">
+                    {% for med in medications if med.frequency != 'daily' %}
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        {{ med.name }} ({{ med.dosage }})
+                        <span class="badge bg-secondary rounded-pill">
+                            {{ med.frequency }}
+                        </span>
+                    </li>
+                    {% endfor %}
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Initialize tooltips
+    var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+    var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+        return new bootstrap.Tooltip(tooltipTriggerEl);
+    });
+    
+    // Schedule modal time inputs toggle
+    document.querySelectorAll('.form-check-input').forEach(function(checkbox) {
+        checkbox.addEventListener('change', function() {
+            const timeInput = this.closest('.time-slot').querySelector('.time-input');
+            if (this.checked) {
+                timeInput.style.display = 'block';
+            } else {
+                timeInput.style.display = 'none';
+            }
+        });
+    });
+});
+</script>
+
+<style>
+.schedule-times .time-input {
+    display: none;
+}
+.btn-group-sm .btn {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.75rem;
+}
+</style>
+{% endblock %}

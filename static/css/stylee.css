@@ -1,53 +1,34 @@
-@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600;700&family=PT+Sans:wght@400;700&display=swap');
-
 :root {
-    /* Color Scheme */
-    --primary: hsl(268, 100%, 25%); /* #4B0082 */
-    --secondary: hsl(270, 25%, 25%); /* #3C2D4B */
-    --success: hsl(271, 76%, 53%); /* #8A2BE2 */
-    --info: hsl(268, 100%, 35%);
-    --warning: hsl(268, 100%, 70%);
+    --primary: #4e73df;
+    --secondary: #858796;
+    --success: #1cc88a;
+    --info: #36b9cc;
+    --warning: #f6c23e;
     --danger: #e74a3b;
-    --light: hsl(240, 67%, 98%); /* #F0F0FC */
-    --dark: hsl(270, 25%, 25%); /* #3C2D4B */
-    
-    /* Font Variables */
-    --font-heading: 'Playfair Display', serif;
-    --font-body: 'PT Sans', sans-serif;
+    --light: #f8f9fc;
+    --dark: #5a5c69;
 }
 
 body {
-    background-color: hsl(240, 67%, 94%); /* #E6E6FA */
-    font-family: var(--font-body);
-    color: var(--secondary);
-    line-height: 1.6;
-}
-
-h1, h2, h3, h4, h5, h6 {
-    font-family: var(--font-heading);
-    font-weight: 600;
-    color: var(--primary);
+    background-color: #f8f9fc;
+    font-family: 'Nunito', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
 }
 
 .card {
     border: none;
     border-radius: 0.35rem;
     box-shadow: 0 0.15rem 1.75rem 0 rgba(58, 59, 69, 0.15);
-    background-color: var(--light);
 }
 
 .card-header {
-    background-color: var(--light);
-    border-bottom: 1px solid hsl(240, 67%, 87%); /* #D9D9F0 */
+    background-color: #f8f9fc;
+    border-bottom: 1px solid #e3e6f0;
     padding: 1rem 1.35rem;
     font-weight: 600;
-    font-family: var(--font-heading);
 }
 
 .navbar {
     box-shadow: 0 0.15rem 1.75rem 0 rgba(58, 59, 69, 0.15);
-    background-color: var(--light);
-    font-family: var(--font-body);
 }
 
 .health-stat-card {
@@ -57,7 +38,6 @@ h1, h2, h3, h4, h5, h6 {
     background-color: white;
     border-radius: 0.35rem;
     box-shadow: 0 0.15rem 0.5rem 0 rgba(58, 59, 69, 0.1);
-    font-family: var(--font-body);
 }
 
 .health-stat-card .stat-icon {
@@ -83,14 +63,12 @@ h1, h2, h3, h4, h5, h6 {
 .health-stat-card .stat-info h3 {
     margin-bottom: 0.25rem;
     font-weight: 600;
-    font-family: var(--font-heading);
 }
 
 .health-stat-card .stat-info p {
     margin-bottom: 0.5rem;
     color: var(--secondary);
     font-size: 0.875rem;
-    font-family: var(--font-body);
 }
 
 .chart-container {
@@ -105,35 +83,31 @@ h1, h2, h3, h4, h5, h6 {
 .table {
     width: 100%;
     margin-bottom: 1rem;
-    color: var(--secondary);
-    font-family: var(--font-body);
+    color: #212529;
 }
 
 .table th {
     font-weight: 600;
     color: var(--dark);
-    background-color: var(--light);
-    font-family: var(--font-heading);
+    background-color: #f8f9fc;
 }
 
 .table td, .table th {
     padding: 0.75rem;
     vertical-align: middle;
-    border-top: 1px solid hsl(240, 67%, 87%); /* #D9D9F0 */
+    border-top: 1px solid #e3e6f0;
 }
 
 .alert {
     border-radius: 0.35rem;
-    font-family: var(--font-body);
 }
 
 .btn-group .btn {
     margin-right: 0.25rem;
-    font-family: var(--font-body);
 }
 
 .text-muted {
-    color: var(--secondary) !important;
+    color: #858796 !important;
 }
 
 .bg-primary {

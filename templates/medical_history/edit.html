@@ -1,0 +1,83 @@
+{% extends "layout.html" %}
+
+{% block title %}Edit Medical History{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <div class="card">
+            <div class="card-header">
+                <h4 class="card-title mb-0">Edit Medical History Entry</h4>
+                <a href="{{ url_for('medical_history_list') }}" class="btn btn-sm btn-outline-secondary float-end">
+                    <i class="fas fa-arrow-left"></i> Back to List
+                </a>
+            </div>
+            <div class="card-body">
+                <form method="POST" enctype="multipart/form-data">
+                    <div class="mb-3">
+                        <label class="form-label">Entry Type</label>
+                        <select class="form-select" name="type" required>
+                            <option value="">Select type</option>
+                            <option value="allergy" {% if entry.type == 'allergy' %}selected{% endif %}>Allergy</option>
+                            <option value="condition" {% if entry.type == 'condition' %}selected{% endif %}>Medical Condition</option>
+                            <option value="surgery" {% if entry.type == 'surgery' %}selected{% endif %}>Surgery</option>
+                            <option value="hospitalization" {% if entry.type == 'hospitalization' %}selected{% endif %}>Hospitalization</option>
+                            <option value="injury" {% if entry.type == 'injury' %}selected{% endif %}>Injury</option>
+                            <option value="other" {% if entry.type == 'other' %}selected{% endif %}>Other</option>
+                        </select>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Details</label>
+                        <input type="text" class="form-control" name="details" value="{{ entry.details }}" required>
+                    </div>
+                    
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label">Date</label>
+                            <input type="date" class="form-control" name="date" 
+                                   value="{{ entry.date.strftime('%Y-%m-%d') if entry.date else '' }}">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Attachment</label>
+                            {% if entry.filename %}
+                            <div class="mb-2">
+                                <a href="{{ url_for('download_medical_history_attachment', entry_id=entry._id) }}" 
+                                   class="btn btn-sm btn-outline-primary">
+                                    <i class="fas fa-download"></i> Current File
+                                </a>
+                                <span class="small text-muted ms-2">{{ entry.filename }}</span>
+                            </div>
+                            {% endif %}
+                            <input class="form-control" type="file" name="attachment" accept=".png,.jpg,.jpeg,.pdf">
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Notes</label>
+                        <textarea class="form-control" name="notes" rows="3">{{ entry.notes or '' }}</textarea>
+                    </div>
+                    
+                    <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                        <a href="{{ url_for('medical_history_list') }}" class="btn btn-secondary">Cancel</a>
+                        <button type="submit" class="btn btn-primary">Update Entry</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Initialize any JavaScript needed for this page
+    const dateInput = document.querySelector('input[name="date"]');
+    
+    // You could add date picker initialization here if needed
+    // Example using flatpickr (would need to include the library):
+    // flatpickr(dateInput, {dateFormat: "Y-m-d"});
+});
+</script>
+{% endblock %}

@@ -1,0 +1,57 @@
+{% extends "layout.html" %}
+
+{% block title %}Edit Vaccine{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <div class="card">
+            <div class="card-header">
+                <h4 class="card-title mb-0">Edit Vaccine Record</h4>
+            </div>
+            <div class="card-body">
+                <form method="POST">
+                    <div class="mb-3">
+                        <label class="form-label">Vaccine Name</label>
+                        <input type="text" class="form-control" name="name" value="{{ vaccine.name }}" required>
+                    </div>
+                    
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label">Date Administered</label>
+                            <input type="date" class="form-control" name="date" 
+                                   value="{{ vaccine.date.strftime('%Y-%m-%d') if vaccine.date else '' }}">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Booster Due Date</label>
+                            <input type="date" class="form-control" name="booster_due" 
+                                   value="{{ vaccine.booster_due.strftime('%Y-%m-%d') if vaccine.booster_due else '' }}">
+                        </div>
+                    </div>
+                    
+                    {% if vaccine.attachment %}
+                    <div class="mb-3">
+                        <label class="form-label">Current Attachment</label>
+                        <div>
+                            <a href="{{ url_for('static', filename='uploads/vaccines/' + vaccine.attachment) }}" target="_blank">
+                                <i class="fas fa-file-alt"></i> View Current Attachment
+                            </a>
+                        </div>
+                    </div>
+                    {% endif %}
+                    
+                    <div class="mb-3">
+                        <label class="form-label">New Attachment (Optional)</label>
+                        <input class="form-control" type="file" name="attachment" accept=".png,.jpg,.jpeg,.pdf">
+                    </div>
+                    
+                    <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                        <a href="{{ url_for('vaccines_list') }}" class="btn btn-secondary">Cancel</a>
+                        <button type="submit" class="btn btn-primary">Update Vaccine</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
