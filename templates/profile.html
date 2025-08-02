@@ -7,15 +7,15 @@
     <div class="col-lg-4">
         <div class="card mb-4">
             <div class="card-body text-center">
-                <img src="{{ user.avatar_url or url_for('static', filename='images/default-avatar.png') }}" 
-                     alt="Profile Picture" class="rounded-circle img-fluid" style="width: 150px;">
+                <img src="{{ user.avatar_url or url_for('static', filename='images/default-avatar.png') }}"
+                    alt="Profile Picture" class="rounded-circle img-fluid" style="width: 150px;">
                 <h5 class="my-3">{{ user.name }}</h5>
                 <p class="text-muted mb-1">{{ user.email }}</p>
                 <p class="text-muted mb-4">
                     {% if user.age %}Age: {{ user.age }}{% endif %}
                     {% if user.gender %} | {{ user.gender|capitalize }}{% endif %}
                 </p>
-                
+
                 <div class="d-flex justify-content-center mb-2">
                     <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#avatarModal">
                         Change Avatar
@@ -23,7 +23,7 @@
                 </div>
             </div>
         </div>
-        
+
         <div class="card mb-4">
             <div class="card-body">
                 <h5 class="card-title">Quick Links</h5>
@@ -44,20 +44,20 @@
                         </a>
                     </li>
                     <li class="list-group-item d-flex justify-content-between align-items-center p-0 py-2">
-                        <a href="{{ url_for('export_vaccines') }}" class="text-decoration-none">
-                            <i class="fas fa-syringe me-2"></i> Export Lab Reports
+                        <a href="{{ url_for('export_all_lab_reports') }}" class="text-decoration-none">
+                            <i class="fas fa-file-alt me-2"></i> Export Lab Reports
                         </a>
                     </li>
                     <li class="list-group-item d-flex justify-content-between align-items-center p-0 py-2">
-                        <a href="{{ url_for('export_vaccines') }}" class="text-decoration-none">
-                            <i class="fas fa-syringe me-2"></i> Export Medical History
+                        <a href="{{ url_for('export_all_medical_history') }}" class="text-decoration-none">
+                            <i class="fas fa-history me-2"></i> Export Medical History
                         </a>
                     </li>
                 </ul>
             </div>
         </div>
     </div>
-    
+
     <div class="col-lg-8">
         <div class="card mb-4">
             <div class="card-header">
@@ -75,7 +75,7 @@
                             <input type="email" class="form-control" name="email" value="{{ user.email }}" required>
                         </div>
                     </div>
-                    
+
                     <div class="row mb-3">
                         <div class="col-sm-4">
                             <label class="form-label">Age</label>
@@ -85,24 +85,25 @@
                             <label class="form-label">Gender</label>
                             <select class="form-select" name="gender">
                                 <option value="">Select</option>
-                                <option value="male" {% if user.gender == 'male' %}selected{% endif %}>Male</option>
-                                <option value="female" {% if user.gender == 'female' %}selected{% endif %}>Female</option>
-                                <option value="other" {% if user.gender == 'other' %}selected{% endif %}>Other</option>
+                                <option value="male" {% if user.gender=='male' %}selected{% endif %}>Male</option>
+                                <option value="female" {% if user.gender=='female' %}selected{% endif %}>Female</option>
+                                <option value="other" {% if user.gender=='other' %}selected{% endif %}>Other</option>
                             </select>
                         </div>
                         <div class="col-sm-4">
                             <label class="form-label">Weight (kg)</label>
-                            <input type="number" step="0.1" class="form-control" name="weight" value="{{ user.weight if user.weight }}">
+                            <input type="number" step="0.1" class="form-control" name="weight"
+                                value="{{ user.weight if user.weight }}">
                         </div>
                     </div>
-                    
+
                     <div class="mb-3">
                         <button type="submit" class="btn btn-primary">Update Profile</button>
                     </div>
                 </form>
             </div>
         </div>
-        
+
         <div class="card">
             <div class="card-header">
                 <h5 class="card-title mb-0">Change Password</h5>

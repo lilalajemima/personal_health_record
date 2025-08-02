@@ -10,7 +10,7 @@
                 <h4 class="card-title mb-0">Edit Medication</h4>
             </div>
             <div class="card-body">
-                <form method="POST">
+                <form method="POST" enctype="multipart/form-data">
                     <div class="row mb-3">
                         <div class="col-md-6">
                             <label class="form-label">Medication Name</label>
@@ -47,6 +47,26 @@
                     <div class="mb-3">
                         <label class="form-label">Notes</label>
                         <textarea class="form-control" name="notes" rows="3">{{ medication.notes or '' }}</textarea>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Attachment (Prescription, etc.)</label>
+                        {% if medication.attachment %}
+                        <div class="mb-2">
+                            <div class="btn-group btn-group-sm">
+                                <a href="{{ url_for('view_medication_attachment', med_id=medication._id) }}"
+                                   class="btn btn-outline-success" target="_blank" title="View {{ medication.attachment }}">
+                                    <i class="fas fa-eye"></i> View Current
+                                </a>
+                                <a href="{{ url_for('download_medication_attachment', med_id=medication._id) }}"
+                                   class="btn btn-outline-primary" download title="Download {{ medication.attachment }}">
+                                    <i class="fas fa-download"></i> Download
+                                </a>
+                            </div>
+                        </div>
+                        {% endif %}
+                        <input type="file" class="form-control" name="attachment" accept=".png,.jpg,.jpeg,.pdf">
+                        <small class="text-muted">Upload new prescription or supporting document (PDF, JPG, PNG)</small>
                     </div>
                     
                     <div class="d-grid gap-2 d-md-flex justify-content-md-end">

@@ -170,7 +170,7 @@ class MedicationService:
         })
     
     @staticmethod
-    def create(user_id, data):
+    def create(user_id, data, filename=None):
         medication = {
             "user_id": ObjectId(user_id),
             "name": data.get('name'),
@@ -178,12 +178,13 @@ class MedicationService:
             "frequency": data.get('frequency'),
             "times": data.getlist('times'),
             "notes": data.get('notes'),
+            "attachment": filename,
             "created_at": datetime.utcnow()
         }
         return col_medications.insert_one(medication)
     
     @staticmethod
-    def update(med_id, user_id, data):
+    def update(med_id, user_id, data, filename=None):
         updates = {
             "name": data.get('name'),
             "dosage": data.get('dosage'),
@@ -192,6 +193,9 @@ class MedicationService:
             "notes": data.get('notes'),
             "updated_at": datetime.utcnow()
         }
+        if filename is not None:
+            updates['attachment'] = filename
+        
         return col_medications.update_one(
             {"_id": ObjectId(med_id),
             "user_id": ObjectId(user_id)},
@@ -200,6 +204,19 @@ class MedicationService:
     
     @staticmethod
     def delete(med_id, user_id):
+        # First get the medication to check for filename
+        medication = col_medications.find_one({
+            "_id": ObjectId(med_id),
+            "user_id": ObjectId(user_id)
+        })
+        
+        # Delete the associated file if it exists
+        if medication and medication.get('attachment'):
+            filepath = os.path.join(app.config['UPLOAD_FOLDER'], 'medications', medication['attachment'])
+            if os.path.exists(filepath):
+                os.remove(filepath)
+        
+        # Delete the database entry
         return col_medications.delete_one({
             "_id": ObjectId(med_id),
             "user_id": ObjectId(user_id)
@@ -475,8 +492,17 @@ def medications_list():
 def medications_create():
     if request.method == 'POST':
         user_id = session['user']['_id']
+        file = request.files.get('attachment')
+        filename = None
+        
+        if file and allowed_file(file.filename):
+            filename = secure_filename(f"{user_id}_{datetime.now().timestamp()}.{file.filename.rsplit('.', 1)[1].lower()}")
+            # Create medications subfolder if it doesn't exist
+            os.makedirs(os.path.join(app.config['UPLOAD_FOLDER'], 'medications'), exist_ok=True)
+            file.save(os.path.join(app.config['UPLOAD_FOLDER'], 'medications', filename))
+        
         try:
-            MedicationService.create(user_id, request.form)
+            MedicationService.create(user_id, request.form, filename)
             flash('Medication added successfully', 'success')
             return redirect(url_for('medications_list'))
         except Exception as e:
@@ -495,8 +521,23 @@ def medications_edit(med_id):
         return redirect(url_for('medications_list'))
     
     if request.method == 'POST':
+        file = request.files.get('attachment')
+        filename = medication.get('attachment')
+        
+        if file and allowed_file(file.filename):
+            # Delete old file if it exists
+            if filename:
+                old_filepath = os.path.join(app.config['UPLOAD_FOLDER'], 'medications', filename)
+                if os.path.exists(old_filepath):
+                    os.remove(old_filepath)
+            
+            # Save new file
+            filename = secure_filename(f"{user_id}_{datetime.now().timestamp()}.{file.filename.rsplit('.', 1)[1].lower()}")
+            os.makedirs(os.path.join(app.config['UPLOAD_FOLDER'], 'medications'), exist_ok=True)
+            file.save(os.path.join(app.config['UPLOAD_FOLDER'], 'medications', filename))
+        
         try:
-            MedicationService.update(med_id, user_id, request.form)
+            MedicationService.update(med_id, user_id, request.form, filename)
             flash('Medication updated successfully', 'success')
             return redirect(url_for('medications_list'))
         except Exception as e:
@@ -1117,9 +1158,37 @@ def api_reminders():
         } for r in reminders]
     })
 
-# ... (previous imports and setup remain the same)
-
 class PDFExportService:
+    @staticmethod
+    def _add_header(story, title, user=None):
+        """Helper method to add consistent header to all PDFs"""
+        styles = getSampleStyleSheet()
+        
+        # Add logo (if you have one)
+        # logo_path = "static/images/logo.png"
+        # if os.path.exists(logo_path):
+        #     story.append(Image(logo_path, width=100, height=50))
+        
+        # Title and user info
+        story.append(Paragraph(title, styles['Title']))
+        if user:
+            story.append(Paragraph(f"Patient: {user.get('name', '')}", styles['Normal']))
+            if user.get('age') and user.get('gender'):
+                story.append(Paragraph(f"{user['age']} year old {user['gender']}", styles['Normal']))
+        story.append(Spacer(1, 12))
+        
+        # Add generation date
+        story.append(Paragraph(f"Generated on: {datetime.now().strftime('%B %d, %Y %H:%M')}", styles['Italic']))
+        story.append(Spacer(1, 12))
+
+    @staticmethod
+    def _add_footer(story):
+        """Helper method to add consistent footer to all PDFs"""
+        styles = getSampleStyleSheet()
+        story.append(Spacer(1, 12))
+        story.append(Paragraph("Confidential Medical Document - Generated by Kobatela Health", 
+                             styles['Italic']))
+
     @staticmethod
     def generate_health_summary(user_id):
         """Generate comprehensive health summary PDF"""
@@ -1131,15 +1200,18 @@ class PDFExportService:
         # Get user data
         user = UserService.get_by_id(user_id)
         
-        # Title
-        story.append(Paragraph(f"Kobatela Health Summary for {user.get('name', '')}", styles['Title']))
-        story.append(Spacer(1, 12))
+        # Header
+        PDFExportService._add_header(story, "Comprehensive Health Summary", user)
         
         # Personal Information
         story.append(Paragraph("Personal Information", styles['Heading2']))
-        story.append(Paragraph(f"Name: {user.get('name', '')}", styles['Normal']))
-        story.append(Paragraph(f"Age: {user.get('age', '')}", styles['Normal']))
-        story.append(Paragraph(f"Gender: {user.get('gender', '')}", styles['Normal']))
+        personal_info = [
+            f"Name: {user.get('name', '')}",
+            f"Age: {user.get('age', '')}",
+            f"Gender: {user.get('gender', '')}",
+            f"Weight: {user.get('weight', '')} kg" if user.get('weight') else ""
+        ]
+        story.append(Paragraph("<br/>".join(filter(None, personal_info)), styles['Normal']))
         story.append(Spacer(1, 12))
         
         # Medical History
@@ -1148,7 +1220,16 @@ class PDFExportService:
             story.append(Paragraph("Medical History", styles['Heading2']))
             for item in history:
                 date_str = item['date'].strftime('%b %d, %Y') if item.get('date') else 'No date'
-                story.append(Paragraph(f"- {item['type']}: {item['details']} ({date_str})", styles['Normal']))
+                story.append(Paragraph(
+                    f"<b>{item['type']}</b> ({date_str}): {item['details']}",
+                    styles['Normal']
+                ))
+                if item.get('notes'):
+                    story.append(Paragraph(
+                    f"<i>Notes:</i> {item['notes']}",
+                    styles['Normal']
+                ))
+                story.append(Spacer(1, 8))
             story.append(Spacer(1, 12))
         
         # Medications
@@ -1156,7 +1237,21 @@ class PDFExportService:
         if meds:
             story.append(Paragraph("Current Medications", styles['Heading2']))
             for med in meds:
-                story.append(Paragraph(f"- {med['name']} ({med['dosage']}), {med['frequency']}", styles['Normal']))
+                story.append(Paragraph(
+                    f"<b>{med['name']}</b> ({med['dosage']}) - {med['frequency']}",
+                    styles['Normal']
+                ))
+                if med.get('times'):
+                    story.append(Paragraph(
+                        f"Times: {', '.join(med['times'])}",
+                        styles['Normal']
+                    ))
+                if med.get('notes'):
+                    story.append(Paragraph(
+                        f"<i>Notes:</i> {med['notes']}",
+                        styles['Normal']
+                    ))
+                story.append(Spacer(1, 8))
             story.append(Spacer(1, 12))
         
         # Vaccines
@@ -1165,8 +1260,12 @@ class PDFExportService:
             story.append(Paragraph("Vaccination Records", styles['Heading2']))
             for vaccine in vax:
                 date_str = vaccine['date'].strftime('%b %d, %Y') if vaccine.get('date') else 'No date'
-                booster_str = f", Booster due: {vaccine['booster_due'].strftime('%b %d, %Y')}" if vaccine.get('booster_due') else ""
-                story.append(Paragraph(f"- {vaccine['name']} ({date_str}{booster_str})", styles['Normal']))
+                booster_str = f"<br/>Booster due: {vaccine['booster_due'].strftime('%b %d, %Y')}" if vaccine.get('booster_due') else ""
+                story.append(Paragraph(
+                    f"<b>{vaccine['name']}</b> ({date_str}){booster_str}",
+                    styles['Normal']
+                ))
+                story.append(Spacer(1, 8))
             story.append(Spacer(1, 12))
         
         # Emergency Notes
@@ -1176,11 +1275,17 @@ class PDFExportService:
             if notes.get('blood_type'):
                 story.append(Paragraph(f"Blood Type: {notes['blood_type']}", styles['Normal']))
             if notes.get('allergies'):
-                story.append(Paragraph("Allergies:", styles['Normal']))
+                story.append(Paragraph("Allergies:", styles['Heading3']))
                 story.append(Paragraph(notes['allergies'], styles['Normal']))
+            if notes.get('medical_conditions'):
+                story.append(Paragraph("Medical Conditions:", styles['Heading3']))
+                story.append(Paragraph(notes['medical_conditions'], styles['Normal']))
             if notes.get('emergency_contacts'):
-                story.append(Paragraph("Emergency Contacts:", styles['Normal']))
+                story.append(Paragraph("Emergency Contacts:", styles['Heading3']))
                 story.append(Paragraph(notes['emergency_contacts'], styles['Normal']))
+        
+        # Footer
+        PDFExportService._add_footer(story)
         
         doc.build(story)
         buffer.seek(0)
@@ -1194,16 +1299,36 @@ class PDFExportService:
         styles = getSampleStyleSheet()
         story = []
         
-        story.append(Paragraph("Medication List", styles['Title']))
-        story.append(Spacer(1, 12))
+        # Get user data
+        user = UserService.get_by_id(user_id)
+        
+        # Header
+        PDFExportService._add_header(story, "Medication List", user)
         
         meds = MedicationService.get_all(user_id)
         for med in meds:
-            story.append(Paragraph(f"- {med['name']} ({med['dosage']})", styles['Normal']))
-            story.append(Paragraph(f"  Frequency: {med['frequency']}", styles['Normal']))
+            story.append(Paragraph(
+                f"<b>{med['name']}</b> ({med['dosage']})",
+                styles['Heading3']
+            ))
+            story.append(Paragraph(
+                f"Frequency: {med['frequency']}",
+                styles['Normal']
+            ))
             if med.get('times'):
-                story.append(Paragraph(f"  Times: {', '.join(med['times'])}", styles['Normal']))
-            story.append(Spacer(1, 8))
+                story.append(Paragraph(
+                    f"Times: {', '.join(med['times'])}",
+                    styles['Normal']
+                ))
+            if med.get('notes'):
+                story.append(Paragraph(
+                    f"Notes: {med['notes']}",
+                    styles['Normal']
+                ))
+            story.append(Spacer(1, 12))
+        
+        # Footer
+        PDFExportService._add_footer(story)
         
         doc.build(story)
         buffer.seek(0)
@@ -1217,15 +1342,177 @@ class PDFExportService:
         styles = getSampleStyleSheet()
         story = []
         
-        story.append(Paragraph("Vaccination Record", styles['Title']))
-        story.append(Spacer(1, 12))
+        # Get user data
+        user = UserService.get_by_id(user_id)
+        
+        # Header
+        PDFExportService._add_header(story, "Vaccination Record", user)
         
         vaccines = VaccineService.get_all(user_id)
         for vax in vaccines:
             date_str = vax['date'].strftime('%b %d, %Y') if vax.get('date') else 'No date'
-            booster_str = f", Booster due: {vax['booster_due'].strftime('%b %d, %Y')}" if vax.get('booster_due') else ""
-            story.append(Paragraph(f"- {vax['name']} ({date_str}{booster_str})", styles['Normal']))
-            story.append(Spacer(1, 8))
+            story.append(Paragraph(
+                f"<b>{vax['name']}</b>",
+                styles['Heading3']
+            ))
+            story.append(Paragraph(
+                f"Date administered: {date_str}",
+                styles['Normal']
+            ))
+            if vax.get('booster_due'):
+                story.append(Paragraph(
+                    f"Booster due: {vax['booster_due'].strftime('%b %d, %Y')}",
+                    styles['Normal']
+                ))
+            story.append(Spacer(1, 12))
+        
+        # Footer
+        PDFExportService._add_footer(story)
+        
+        doc.build(story)
+        buffer.seek(0)
+        return buffer
+
+    @staticmethod
+    def generate_lab_report_pdf(report_data, user_data):
+        """Generate a detailed PDF for a single lab report"""
+        buffer = BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=letter)
+        styles = getSampleStyleSheet()
+        story = []
+        
+        # Header
+        PDFExportService._add_header(story, "Lab Test Report", user_data)
+        
+        # Report Details
+        story.append(Paragraph(report_data.get('name', 'Lab Report'), styles['Heading2']))
+        
+        details = []
+        if report_data.get('test_type'):
+            details.append(f"<b>Test Type:</b> {report_data['test_type']}")
+        if report_data.get('date'):
+            details.append(f"<b>Date:</b> {report_data['date'].strftime('%B %d, %Y')}")
+        
+        story.append(Paragraph("<br/>".join(details), styles['Normal']))
+        story.append(Spacer(1, 12))
+        
+        # Notes
+        if report_data.get('notes'):
+            story.append(Paragraph("Test Results and Notes:", styles['Heading3']))
+            story.append(Paragraph(report_data['notes'], styles['Normal']))
+            story.append(Spacer(1, 12))
+        
+        # Footer
+        PDFExportService._add_footer(story)
+        
+        doc.build(story)
+        buffer.seek(0)
+        return buffer
+
+    @staticmethod
+    def generate_medical_history_pdf(history_data, user_data):
+        """Generate a detailed PDF for a single medical history entry"""
+        buffer = BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=letter)
+        styles = getSampleStyleSheet()
+        story = []
+        
+        # Header
+        PDFExportService._add_header(story, "Medical History Record", user_data)
+        
+        # Title
+        story.append(Paragraph(history_data.get('type', 'Medical Record'), styles['Heading2']))
+        
+        # Details
+        details = []
+        if history_data.get('date'):
+            details.append(f"<b>Date:</b> {history_data['date'].strftime('%B %d, %Y')}")
+        
+        story.append(Paragraph("<br/>".join(details), styles['Normal']))
+        story.append(Spacer(1, 12))
+        
+        # Main content
+        story.append(Paragraph("<b>Details:</b>", styles['Normal']))
+        story.append(Paragraph(history_data.get('details', ''), styles['Normal']))
+        story.append(Spacer(1, 12))
+        
+        # Notes
+        if history_data.get('notes'):
+            story.append(Paragraph("<b>Additional Notes:</b>", styles['Normal']))
+            story.append(Paragraph(history_data['notes'], styles['Normal']))
+            story.append(Spacer(1, 12))
+        
+        # Footer
+        PDFExportService._add_footer(story)
+        
+        doc.build(story)
+        buffer.seek(0)
+        return buffer
+
+    @staticmethod
+    def generate_emergency_info_pdf(user_id):
+        """Generate emergency information PDF"""
+        buffer = BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=letter)
+        styles = getSampleStyleSheet()
+        story = []
+        
+        # Get user data
+        user = UserService.get_by_id(user_id)
+        notes = EmergencyNotesService.get(user_id)
+        
+        # Header - make this one stand out more
+        story.append(Paragraph("EMERGENCY MEDICAL INFORMATION", styles['Title']))
+        story.append(Spacer(1, 12))
+        story.append(Paragraph(f"Patient: {user.get('name', '')}", styles['Heading2']))
+        if user.get('age') and user.get('gender'):
+            story.append(Paragraph(f"{user['age']} year old {user['gender']}", styles['Heading3']))
+        story.append(Spacer(1, 12))
+        
+        # Critical Information
+        story.append(Paragraph("Critical Information", styles['Heading2']))
+        
+        if notes:
+            if notes.get('blood_type'):
+                story.append(Paragraph(
+                    f"<b>Blood Type:</b> {notes['blood_type']}",
+                    styles['Normal']
+                ))
+            
+            if notes.get('allergies'):
+                story.append(Paragraph(
+                    "<b>Allergies:</b>",
+                    styles['Heading3']
+                ))
+                story.append(Paragraph(
+                    notes['allergies'],
+                    styles['Normal']
+                ))
+            
+            if notes.get('medical_conditions'):
+                story.append(Paragraph(
+                    "<b>Medical Conditions:</b>",
+                    styles['Heading3']
+                ))
+                story.append(Paragraph(
+                    notes['medical_conditions'],
+                    styles['Normal']
+                ))
+        
+        # Emergency Contacts
+        if notes and notes.get('emergency_contacts'):
+            story.append(Paragraph("Emergency Contacts", styles['Heading2']))
+            story.append(Paragraph(
+                notes['emergency_contacts'],
+                styles['Normal']
+            ))
+        
+        # Footer with big warning
+        story.append(Spacer(1, 24))
+        story.append(Paragraph(
+            "IN CASE OF EMERGENCY, PLEASE PROVIDE THIS DOCUMENT TO MEDICAL PERSONNEL",
+            styles['Heading2']
+        ))
         
         doc.build(story)
         buffer.seek(0)
@@ -1268,6 +1555,83 @@ def export_vaccines():
         pdf_buffer,
         as_attachment=True,
         download_name=f"vaccine_record_{datetime.now().strftime('%Y%m%d')}.pdf",
+        mimetype='application/pdf'
+    )
+
+@app.route('/export/all-lab-reports')
+@login_required
+def export_all_lab_reports():
+    """Export all lab reports as PDF"""
+    user_id = session['user']['_id']
+    user = UserService.get_by_id(user_id)
+    reports = LabReportService.get_all(user_id)
+    
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter)
+    styles = getSampleStyleSheet()
+    story = []
+    
+    # Header
+    PDFExportService._add_header(story, "All Lab Reports", user)
+    
+    # Add each report
+    for report in reports:
+        date_str = report['date'].strftime('%b %d, %Y') if report.get('date') else 'No date'
+        story.append(Paragraph(
+            f"<b>{report['name']}</b> ({report.get('test_type', '')}) - {date_str}",
+            styles['Heading3']
+        ))
+        if report.get('notes'):
+            story.append(Paragraph(report['notes'], styles['Normal']))
+        story.append(Spacer(1, 12))
+    
+    PDFExportService._add_footer(story)
+    doc.build(story)
+    buffer.seek(0)
+    
+    return send_file(
+        buffer,
+        as_attachment=True,
+        download_name=f"all_lab_reports_{datetime.now().strftime('%Y%m%d')}.pdf",
+        mimetype='application/pdf'
+    )
+
+@app.route('/export/all-medical-history')
+@login_required
+def export_all_medical_history():
+    """Export all medical history entries as PDF"""
+    user_id = session['user']['_id']
+    user = UserService.get_by_id(user_id)
+    history = MedicalHistoryService.get_all(user_id)
+    
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter)
+    styles = getSampleStyleSheet()
+    story = []
+    
+    # Header
+    PDFExportService._add_header(story, "Complete Medical History", user)
+    
+    # Add each entry
+    for entry in history:
+        date_str = entry['date'].strftime('%b %d, %Y') if entry.get('date') else 'No date'
+        story.append(Paragraph(
+            f"<b>{entry['type']}</b> - {date_str}",
+            styles['Heading3']
+        ))
+        story.append(Paragraph(entry['details'], styles['Normal']))
+        if entry.get('notes'):
+            story.append(Paragraph(f"Notes: {entry['notes']}", styles['Normal']))
+        story.append(Spacer(1, 12))
+    
+    PDFExportService._add_footer(story)
+    doc.build(story)
+    buffer.seek(0)
+    
+    return send_file(
+        buffer,
+        as_attachment=True,
+        download_name=f"complete_medical_history_{datetime.now().strftime('%Y%m%d')}.pdf",
         mimetype='application/pdf'
     )
 
@@ -1316,6 +1680,108 @@ def download_lab_report(report_id):
         as_attachment=True,
         download_name=f"lab_report_{report['name']}_{report['date'].strftime('%Y%m%d') if report.get('date') else 'nodate'}.{report['filename'].split('.')[-1]}"
     )
+
+@app.route('/download/vaccine/<vaccine_id>')
+@login_required
+def download_vaccine_attachment(vaccine_id):
+    user_id = session['user']['_id']
+    vaccine = VaccineService.get_by_id(vaccine_id, user_id)
+    
+    if not vaccine or not vaccine.get('attachment'):
+        flash('File not found', 'error')
+        return redirect(url_for('vaccines_list'))
+    
+    filepath = os.path.join(app.config['UPLOAD_FOLDER'], 'vaccines', vaccine['attachment'])
+    
+    if not os.path.exists(filepath):
+        flash('File no longer available', 'error')
+        return redirect(url_for('vaccines_list'))
+    
+    return send_file(
+        filepath,
+        as_attachment=True,
+        download_name=os.path.basename(vaccine['attachment'])
+    )
+
+@app.route('/view/lab-report/<report_id>')
+@login_required
+def view_lab_report_attachment(report_id):
+    user_id = session['user']['_id']
+    report = LabReportService.get_by_id(report_id, user_id)
+    
+    if not report or not report.get('filename'):
+        flash('File not found', 'error')
+        return redirect(url_for('lab_reports_list'))
+    
+    filepath = os.path.join(app.config['UPLOAD_FOLDER'], 'lab_reports', report['filename'])
+    
+    if not os.path.exists(filepath):
+        flash('File no longer available', 'error')
+        return redirect(url_for('lab_reports_list'))
+    
+    # For images and PDFs, we can display them in the browser
+    file_ext = report['filename'].split('.')[-1].lower()
+    
+    if file_ext in ['png', 'jpg', 'jpeg', 'pdf']:
+        return send_file(filepath)
+    else:
+        # For other file types, force download
+        return send_file(
+            filepath,
+            as_attachment=True,
+            download_name=os.path.basename(report['filename'])
+        )
+
+@app.route('/download/medication/<med_id>')
+@login_required
+def download_medication_attachment(med_id):
+    user_id = session['user']['_id']
+    medication = MedicationService.get_by_id(med_id, user_id)
+    
+    if not medication or not medication.get('attachment'):
+        flash('File not found', 'error')
+        return redirect(url_for('medications_list'))
+    
+    filepath = os.path.join(app.config['UPLOAD_FOLDER'], 'medications', medication['attachment'])
+    
+    if not os.path.exists(filepath):
+        flash('File no longer available', 'error')
+        return redirect(url_for('medications_list'))
+    
+    return send_file(
+        filepath,
+        as_attachment=True,
+        download_name=os.path.basename(medication['attachment'])
+    )
+
+@app.route('/view/medication/<med_id>')
+@login_required
+def view_medication_attachment(med_id):
+    user_id = session['user']['_id']
+    medication = MedicationService.get_by_id(med_id, user_id)
+    
+    if not medication or not medication.get('attachment'):
+        flash('File not found', 'error')
+        return redirect(url_for('medications_list'))
+    
+    filepath = os.path.join(app.config['UPLOAD_FOLDER'], 'medications', medication['attachment'])
+    
+    if not os.path.exists(filepath):
+        flash('File no longer available', 'error')
+        return redirect(url_for('medications_list'))
+    
+    # For images and PDFs, we can display them in the browser
+    file_ext = medication['attachment'].split('.')[-1].lower()
+    
+    if file_ext in ['png', 'jpg', 'jpeg', 'pdf']:
+        return send_file(filepath)
+    else:
+        # For other file types, force download
+        return send_file(
+            filepath,
+            as_attachment=True,
+            download_name=os.path.basename(medication['attachment'])
+        )
 
 @app.route('/api/health-recommendations')
 @login_required

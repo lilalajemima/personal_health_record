@@ -46,20 +46,29 @@
                         </td>
                         <td>
                             {% if vaccine.attachment %}
-                            <a href="{{ url_for('static', filename='uploads/vaccines/' + vaccine.attachment) }}" target="_blank">
-                                <i class="fas fa-file-alt"></i> View
-                            </a>
+                            <div class="btn-group btn-group-sm">
+                                <a href="{{ url_for('static', filename='uploads/vaccines/' + vaccine.attachment) }}" 
+                                   class="btn btn-outline-success" target="_blank" title="View {{ vaccine.attachment }}">
+                                    <i class="fas fa-eye"></i>
+                                </a>
+                                <a href="{{ url_for('download_vaccine_attachment', vaccine_id=vaccine._id) }}" 
+                                   class="btn btn-outline-primary" download title="Download {{ vaccine.attachment }}">
+                                    <i class="fas fa-download"></i>
+                                </a>
+                            </div>
                             {% else %}
-                            N/A
+                            <span class="text-muted">None</span>
                             {% endif %}
                         </td>
                         <td>
-                            <div class="btn-group">
-                                <a href="{{ url_for('vaccines_edit', vaccine_id=vaccine._id) }}" class="btn btn-sm btn-outline-primary">
+                            <div class="btn-group btn-group-sm">
+                                <a href="{{ url_for('vaccines_edit', vaccine_id=vaccine._id) }}" class="btn btn-outline-primary" title="Edit">
                                     <i class="fas fa-edit"></i>
                                 </a>
                                 <form method="POST" action="{{ url_for('vaccines_delete', vaccine_id=vaccine._id) }}" class="d-inline">
-                                    <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Are you sure you want to delete this vaccine record?')">
+                                    <button type="submit" class="btn btn-outline-danger" 
+                                        onclick="return confirm('Are you sure you want to delete this vaccine record?')"
+                                        title="Delete">
                                         <i class="fas fa-trash"></i>
                                     </button>
                                 </form>

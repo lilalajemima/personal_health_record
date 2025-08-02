@@ -5,12 +5,14 @@
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
     <h2>Lab Reports</h2>
-    <a href="{{ url_for('export_medications') }}" class="btn btn-outline-secondary me-2">
-        <i class="fas fa-file-pdf"></i> Export
-    </a>
-    <a href="{{ url_for('lab_reports_create') }}" class="btn btn-primary">
-        <i class="fas fa-plus"></i> Add New
-    </a>
+    <div>
+        <a href="{{ url_for('export_all_lab_reports') }}" class="btn btn-outline-secondary me-2">
+            <i class="fas fa-file-pdf"></i> Export All
+        </a>
+        <a href="{{ url_for('lab_reports_create') }}" class="btn btn-primary">
+            <i class="fas fa-plus"></i> Add New
+        </a>
+    </div>
 </div>
 
 {% if suggestions %}
@@ -60,24 +62,31 @@
                         <td>{{ report.notes|truncate(20) if report.notes else 'N/A' }}</td>
                         <td>
                             {% if report.filename %}
-                            <a href="{{ url_for('download_lab_report', report_id=report._id) }}">
-                                <i class="fas fa-file-alt"></i> Download
-                            </a>
+                            <div class="btn-group btn-group-sm">
+                                <a href="{{ url_for('view_lab_report_attachment', report_id=report._id) }}"
+                                    class="btn btn-outline-success" target="_blank" title="View {{ report.filename }}">
+                                    <i class="fas fa-eye"></i>
+                                </a>
+                                <a href="{{ url_for('download_lab_report', report_id=report._id) }}"
+                                    class="btn btn-outline-primary" download title="Download {{ report.filename }}">
+                                    <i class="fas fa-download"></i>
+                                </a>
+                            </div>
                             {% else %}
-                            N/A
+                            <span class="text-muted">None</span>
                             {% endif %}
                         </td>
-                        <!-- In your list.html, modify the actions column -->
                         <td>
-                            <div class="btn-group">
+                            <div class="btn-group btn-group-sm">
                                 <a href="{{ url_for('lab_reports_edit', report_id=report._id) }}"
-                                    class="btn btn-sm btn-outline-primary">
+                                    class="btn btn-outline-primary" title="Edit">
                                     <i class="fas fa-edit"></i>
                                 </a>
                                 <form method="POST" action="{{ url_for('lab_reports_delete', report_id=report._id) }}"
                                     class="d-inline">
-                                    <button type="submit" class="btn btn-sm btn-outline-danger"
-                                        onclick="return confirm('Are you sure you want to delete this lab report?')">
+                                    <button type="submit" class="btn btn-outline-danger"
+                                        onclick="return confirm('Are you sure you want to delete this lab report?')"
+                                        title="Delete">
                                         <i class="fas fa-trash"></i>
                                     </button>
                                 </form>
