@@ -192,6 +192,14 @@ h1, h2, h3, h4, h5, h6 {
     color: var(--dark) !important;
 }
 
+.kobatela-logo {
+    font-family: "Gochi Hand", cursive;
+    font-size: 22px;
+    font-weight: bold;
+    color: white !important; 
+    text-decoration: none;
+}
+
 /* Responsive adjustments */
 @media (max-width: 768px) {
     .health-stat-card {

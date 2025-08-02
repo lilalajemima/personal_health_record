@@ -16,6 +16,9 @@ from reportlab.lib.styles import getSampleStyleSheet
 from dotenv import load_dotenv
 import json
 import google.generativeai as genai
+from pydantic import BaseModel
+from typing import List, Optional
+from enum import Enum
 from datetime import datetime
 
 # Load environment variables
@@ -44,7 +47,7 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 # Database setup
 client = MongoClient(
     os.getenv("MONGO_URI"),
-    tlsAllowInvalidCertificates=True  # This bypasses SSL verification
+    tlsAllowInvalidCertificates=True  
 )
 db = client.kobatela
 
@@ -72,7 +75,7 @@ def login_required(f):
         return redirect(url_for('login'))
     return wrap
 
-# Service Classes
+#########################################################################################################################################################################################################################
 class UserService:
     @staticmethod
     def get_by_id(user_id):
@@ -95,7 +98,6 @@ class UserService:
             {"_id": ObjectId(user_id)},
             {"$set": updates}
         )
-
 
 class MedicalHistoryService:
     @staticmethod
@@ -139,23 +141,40 @@ class MedicalHistoryService:
     
     @staticmethod
     def delete(entry_id, user_id):
-        # First get the entry to check for filename
+        
         entry = col_medical_history.find_one({
             "_id": ObjectId(entry_id),
             "user_id": ObjectId(user_id)
         })
     
-        # Delete the associated file if it exists
         if entry and entry.get('filename'):
             filepath = os.path.join(app.config['UPLOAD_FOLDER'], 'medical_history', entry['filename'])
             if os.path.exists(filepath):
                 os.remove(filepath)
     
-        # Delete the database entry
         return col_medical_history.delete_one({
             "_id": ObjectId(entry_id),
             "user_id": ObjectId(user_id)
         })
+
+class RecommendationPriority(str, Enum):
+    HIGH = "high"
+    MEDIUM = "medium"
+    LOW = "low"
+
+class RecommendationCategory(str, Enum):
+    SCREENING = "screening"
+    BLOOD_TEST = "blood_test"
+    IMAGING = "imaging"
+    PHYSICAL = "physical"
+    VACCINE = "vaccine"
+
+class HealthRecommendation(BaseModel):
+    name: str
+    description: str
+    frequency: str
+    category: RecommendationCategory
+    priority: RecommendationPriority
 
 class MedicationService:
     @staticmethod
@@ -204,25 +223,22 @@ class MedicationService:
     
     @staticmethod
     def delete(med_id, user_id):
-        # First get the medication to check for filename
+
         medication = col_medications.find_one({
             "_id": ObjectId(med_id),
             "user_id": ObjectId(user_id)
         })
         
-        # Delete the associated file if it exists
         if medication and medication.get('attachment'):
             filepath = os.path.join(app.config['UPLOAD_FOLDER'], 'medications', medication['attachment'])
             if os.path.exists(filepath):
                 os.remove(filepath)
         
-        # Delete the database entry
         return col_medications.delete_one({
             "_id": ObjectId(med_id),
             "user_id": ObjectId(user_id)
         })
 
-# User class for authentication
 class User:
     def start_session(self, user):
         user['_id'] = str(user['_id'])
@@ -272,7 +288,7 @@ class User:
 
 user_manager = User()
 
-# Template filters and context processors
+##################################################################################################################################################################################################################################
 @app.context_processor
 def inject_datetime():
     return {'datetime': datetime}
@@ -288,7 +304,7 @@ def datetimeformat(value, format='%Y-%m-%d %H:%M'):
             return value
     return value.strftime(format)
 
-# Routes
+#############################################################################################################################################################################################################################################################################
 @app.route('/')
 def home():
     if 'logged_in' in session:
@@ -320,7 +336,7 @@ def signup():
 def logout():
     return user_manager.signout()
 
-# Dashboard
+# Dashboard Routes
 @app.route('/dashboard')
 @login_required
 def dashboard():
@@ -438,13 +454,12 @@ def medical_history_edit(entry_id):
         filename = entry.get('filename')
         
         if file and allowed_file(file.filename):
-            # Delete old file if it exists
+            
             if filename:
                 old_filepath = os.path.join(app.config['UPLOAD_FOLDER'], 'medical_history', filename)
                 if os.path.exists(old_filepath):
                     os.remove(old_filepath)
             
-            # Save new file
             filename = secure_filename(f"{user_id}_{datetime.now().timestamp()}.{file.filename.rsplit('.', 1)[1].lower()}")
             os.makedirs(os.path.join(app.config['UPLOAD_FOLDER'], 'medical_history'), exist_ok=True)
             file.save(os.path.join(app.config['UPLOAD_FOLDER'], 'medical_history', filename))
@@ -452,7 +467,6 @@ def medical_history_edit(entry_id):
         try:
             MedicalHistoryService.update(entry_id, user_id, request.form)
             
-            # Update filename in database if new file was uploaded
             if file and allowed_file(file.filename):
                 col_medical_history.update_one(
                     {"_id": ObjectId(entry_id)},
@@ -565,7 +579,6 @@ def api_medical_history():
     user_id = session['user']['_id']
     history = MedicalHistoryService.get_all(user_id)
     
-    # Convert for JSON response
     for entry in history:
         entry['_id'] = str(entry['_id'])
         if 'date' in entry and entry['date']:
@@ -605,24 +618,17 @@ def view_medical_history_attachment(entry_id):
         flash('File no longer available', 'error')
         return redirect(url_for('medical_history_list'))
     
-    # For images and PDFs, we can display them in the browser
     file_ext = entry['filename'].split('.')[-1].lower()
     
     if file_ext in ['png', 'jpg', 'jpeg', 'pdf']:
         return send_file(filepath)
     else:
-        # For other file types, force download
         return send_file(
             filepath,
             as_attachment=True,
             download_name=os.path.basename(entry['filename'])
         )
 
-# Similar API endpoints would be created for other resources
-
-# ... (previous imports and setup remain the same)
-
-# Service Classes for all resources
 class VaccineService:
     @staticmethod
     def get_all(user_id):
@@ -728,55 +734,37 @@ class EmergencyNotesService:
             "allergies": data.get('allergies'),
             "medical_conditions": data.get('medical_conditions'),
             "emergency_contacts": data.get('emergency_contacts'),
-            "files": files or [],
             "updated_at": datetime.utcnow()
         }
         
         existing = EmergencyNotesService.get(user_id)
         if existing:
+            if files:
+                emergency_data['files'] = existing.get('files', []) + files
+            else:
+                emergency_data['files'] = existing.get('files', [])
+            
             return col_emergency_notes.update_one(
                 {"_id": existing['_id']},
                 {"$set": emergency_data}
             )
         else:
             emergency_data['created_at'] = datetime.utcnow()
+            emergency_data['files'] = files or []
             return col_emergency_notes.insert_one(emergency_data)
-
-class FamilyMemberService:
-    @staticmethod
-    def get_all(user_id):
-        return list(col_family_members.find({"user_id": ObjectId(user_id)}))
     
     @staticmethod
-    def get_by_id(member_id, user_id):
-        return col_family_members.find_one({
-            "_id": ObjectId(member_id),
-            "user_id": ObjectId(user_id)
-        })
-    
-    @staticmethod
-    def create(user_id, data):
-        family_user = UserService.get_by_email(data.get('email'))
-        if not family_user:
-            return None
-        
-        member = {
-            "user_id": ObjectId(user_id),
-            "family_user_id": family_user['_id'],
-            "name": family_user.get('name'),
-            "email": family_user.get('email'),
-            "relation": data.get('relation'),
-            "access_level": data.get('access_level', 'view_emergency'),
-            "created_at": datetime.utcnow()
-        }
-        return col_family_members.insert_one(member)
-    
-    @staticmethod
-    def delete(member_id, user_id):
-        return col_family_members.delete_one({
-            "_id": ObjectId(member_id),
-            "user_id": ObjectId(user_id)
-        })
+    def delete_file(user_id, filename):
+        result = col_emergency_notes.update_one(
+            {"user_id": ObjectId(user_id)},
+            {"$pull": {"files": filename}}
+        )
+        if result.modified_count > 0:
+            filepath = os.path.join(app.config['UPLOAD_FOLDER'], 'emergency', filename)
+            if os.path.exists(filepath):
+                os.remove(filepath)
+            return True
+        return False
 
 class ReminderService:
     @staticmethod
@@ -900,7 +888,6 @@ def lab_reports_list():
     user_id = session['user']['_id']
     reports = LabReportService.get_all(user_id)
     
-    # Get AI suggestions
     user = UserService.get_by_id(user_id)
     suggestions = []
     
@@ -925,7 +912,7 @@ def lab_reports_create():
         
         if file and allowed_file(file.filename):
             filename = secure_filename(f"{user_id}_{datetime.now().timestamp()}.{file.filename.rsplit('.', 1)[1].lower()}")
-            # Save in lab_reports subfolder
+            #
             os.makedirs(os.path.join(app.config['UPLOAD_FOLDER'], 'lab_reports'), exist_ok=True)
             file.save(os.path.join(app.config['UPLOAD_FOLDER'], 'lab_reports', filename))
         
@@ -967,13 +954,11 @@ def lab_reports_edit(report_id):
             filename = report.get('filename')
             
             if file and allowed_file(file.filename):
-                # Delete old file if it exists
                 if filename:
                     old_filepath = os.path.join(app.config['UPLOAD_FOLDER'], 'lab_reports', filename)
                     if os.path.exists(old_filepath):
                         os.remove(old_filepath)
                 
-                # Save new file
                 filename = secure_filename(f"{user_id}_{datetime.now().timestamp()}.{file.filename.rsplit('.', 1)[1].lower()}")
                 os.makedirs(os.path.join(app.config['UPLOAD_FOLDER'], 'lab_reports'), exist_ok=True)
                 file.save(os.path.join(app.config['UPLOAD_FOLDER'], 'lab_reports', filename))
@@ -993,62 +978,6 @@ def lab_reports_edit(report_id):
     
     return render_template('lab_reports/edit.html', report=report)
 
-# Emergency Notes Routes
-@app.route('/emergency-notes', methods=['GET', 'POST'])
-@login_required
-def emergency_notes():
-    user_id = session['user']['_id']
-    
-    if request.method == 'POST':
-        files = request.files.getlist('emergency_files')
-        filepaths = []
-        
-        for file in files:
-            if file and allowed_file(file.filename):
-                filename = secure_filename(f"{user_id}_{datetime.now().timestamp()}.{file.filename.rsplit('.', 1)[1].lower()}")
-                file.save(os.path.join(app.config['UPLOAD_FOLDER'], 'emergency', filename))
-                filepaths.append(filename)
-        
-        try:
-            EmergencyNotesService.create_or_update(user_id, request.form, filepaths)
-            flash('Emergency notes updated successfully', 'success')
-        except Exception as e:
-            flash(f'Error updating emergency notes: {str(e)}', 'error')
-        
-        return redirect(url_for('emergency_notes'))
-    
-    notes = EmergencyNotesService.get(user_id)
-    family = FamilyMemberService.get_all(user_id)
-    return render_template('emergency_notes/view.html', notes=notes, family=family)
-
-# Family Member Routes
-@app.route('/family-members/add', methods=['POST'])
-@login_required
-def family_members_add():
-    user_id = session['user']['_id']
-    try:
-        result = FamilyMemberService.create(user_id, request.form)
-        if result:
-            flash('Family member added successfully', 'success')
-        else:
-            flash('No user found with that email', 'error')
-    except Exception as e:
-        flash(f'Error adding family member: {str(e)}', 'error')
-    
-    return redirect(url_for('emergency_notes'))
-
-@app.route('/family-members/<member_id>/delete', methods=['POST'])
-@login_required
-def family_members_delete(member_id):
-    user_id = session['user']['_id']
-    result = FamilyMemberService.delete(member_id, user_id)
-    
-    if result.deleted_count > 0:
-        flash('Family member removed successfully', 'success')
-    else:
-        flash('Family member not found or could not be removed', 'error')
-    
-    return redirect(url_for('emergency_notes'))
 
 # Reminder Routes
 @app.route('/reminders')
@@ -1080,6 +1009,18 @@ def reminders_delete(reminder_id):
         flash('Reminder deleted successfully', 'success')
     else:
         flash('Reminder not found or could not be deleted', 'error')
+    
+    return redirect(url_for('reminders_list'))
+
+@app.route('/reminders/<reminder_id>', methods=['POST'])
+@login_required
+def reminders_update(reminder_id):
+    user_id = session['user']['_id']
+    try:
+        ReminderService.update(reminder_id, user_id, request.form)
+        flash('Reminder updated successfully', 'success')
+    except Exception as e:
+        flash(f'Error updating reminder: {str(e)}', 'error')
     
     return redirect(url_for('reminders_list'))
 
@@ -1164,12 +1105,6 @@ class PDFExportService:
         """Helper method to add consistent header to all PDFs"""
         styles = getSampleStyleSheet()
         
-        # Add logo (if you have one)
-        # logo_path = "static/images/logo.png"
-        # if os.path.exists(logo_path):
-        #     story.append(Image(logo_path, width=100, height=50))
-        
-        # Title and user info
         story.append(Paragraph(title, styles['Title']))
         if user:
             story.append(Paragraph(f"Patient: {user.get('name', '')}", styles['Normal']))
@@ -1177,7 +1112,6 @@ class PDFExportService:
                 story.append(Paragraph(f"{user['age']} year old {user['gender']}", styles['Normal']))
         story.append(Spacer(1, 12))
         
-        # Add generation date
         story.append(Paragraph(f"Generated on: {datetime.now().strftime('%B %d, %Y %H:%M')}", styles['Italic']))
         story.append(Spacer(1, 12))
 
@@ -1197,13 +1131,10 @@ class PDFExportService:
         styles = getSampleStyleSheet()
         story = []
         
-        # Get user data
         user = UserService.get_by_id(user_id)
         
-        # Header
         PDFExportService._add_header(story, "Comprehensive Health Summary", user)
         
-        # Personal Information
         story.append(Paragraph("Personal Information", styles['Heading2']))
         personal_info = [
             f"Name: {user.get('name', '')}",
@@ -1214,7 +1145,6 @@ class PDFExportService:
         story.append(Paragraph("<br/>".join(filter(None, personal_info)), styles['Normal']))
         story.append(Spacer(1, 12))
         
-        # Medical History
         history = MedicalHistoryService.get_all(user_id)
         if history:
             story.append(Paragraph("Medical History", styles['Heading2']))
@@ -1232,7 +1162,6 @@ class PDFExportService:
                 story.append(Spacer(1, 8))
             story.append(Spacer(1, 12))
         
-        # Medications
         meds = MedicationService.get_all(user_id)
         if meds:
             story.append(Paragraph("Current Medications", styles['Heading2']))
@@ -1254,7 +1183,6 @@ class PDFExportService:
                 story.append(Spacer(1, 8))
             story.append(Spacer(1, 12))
         
-        # Vaccines
         vax = VaccineService.get_all(user_id)
         if vax:
             story.append(Paragraph("Vaccination Records", styles['Heading2']))
@@ -1268,7 +1196,6 @@ class PDFExportService:
                 story.append(Spacer(1, 8))
             story.append(Spacer(1, 12))
         
-        # Emergency Notes
         notes = EmergencyNotesService.get(user_id)
         if notes:
             story.append(Paragraph("Emergency Information", styles['Heading2']))
@@ -1284,7 +1211,6 @@ class PDFExportService:
                 story.append(Paragraph("Emergency Contacts:", styles['Heading3']))
                 story.append(Paragraph(notes['emergency_contacts'], styles['Normal']))
         
-        # Footer
         PDFExportService._add_footer(story)
         
         doc.build(story)
@@ -1299,10 +1225,8 @@ class PDFExportService:
         styles = getSampleStyleSheet()
         story = []
         
-        # Get user data
         user = UserService.get_by_id(user_id)
         
-        # Header
         PDFExportService._add_header(story, "Medication List", user)
         
         meds = MedicationService.get_all(user_id)
@@ -1327,7 +1251,6 @@ class PDFExportService:
                 ))
             story.append(Spacer(1, 12))
         
-        # Footer
         PDFExportService._add_footer(story)
         
         doc.build(story)
@@ -1342,10 +1265,8 @@ class PDFExportService:
         styles = getSampleStyleSheet()
         story = []
         
-        # Get user data
         user = UserService.get_by_id(user_id)
         
-        # Header
         PDFExportService._add_header(story, "Vaccination Record", user)
         
         vaccines = VaccineService.get_all(user_id)
@@ -1366,7 +1287,6 @@ class PDFExportService:
                 ))
             story.append(Spacer(1, 12))
         
-        # Footer
         PDFExportService._add_footer(story)
         
         doc.build(story)
@@ -1375,16 +1295,14 @@ class PDFExportService:
 
     @staticmethod
     def generate_lab_report_pdf(report_data, user_data):
-        """Generate a detailed PDF for a single lab report"""
+    
         buffer = BytesIO()
         doc = SimpleDocTemplate(buffer, pagesize=letter)
         styles = getSampleStyleSheet()
         story = []
         
-        # Header
         PDFExportService._add_header(story, "Lab Test Report", user_data)
         
-        # Report Details
         story.append(Paragraph(report_data.get('name', 'Lab Report'), styles['Heading2']))
         
         details = []
@@ -1396,13 +1314,11 @@ class PDFExportService:
         story.append(Paragraph("<br/>".join(details), styles['Normal']))
         story.append(Spacer(1, 12))
         
-        # Notes
         if report_data.get('notes'):
             story.append(Paragraph("Test Results and Notes:", styles['Heading3']))
             story.append(Paragraph(report_data['notes'], styles['Normal']))
             story.append(Spacer(1, 12))
         
-        # Footer
         PDFExportService._add_footer(story)
         
         doc.build(story)
@@ -1417,13 +1333,10 @@ class PDFExportService:
         styles = getSampleStyleSheet()
         story = []
         
-        # Header
         PDFExportService._add_header(story, "Medical History Record", user_data)
         
-        # Title
         story.append(Paragraph(history_data.get('type', 'Medical Record'), styles['Heading2']))
         
-        # Details
         details = []
         if history_data.get('date'):
             details.append(f"<b>Date:</b> {history_data['date'].strftime('%B %d, %Y')}")
@@ -1431,18 +1344,15 @@ class PDFExportService:
         story.append(Paragraph("<br/>".join(details), styles['Normal']))
         story.append(Spacer(1, 12))
         
-        # Main content
         story.append(Paragraph("<b>Details:</b>", styles['Normal']))
         story.append(Paragraph(history_data.get('details', ''), styles['Normal']))
         story.append(Spacer(1, 12))
         
-        # Notes
         if history_data.get('notes'):
             story.append(Paragraph("<b>Additional Notes:</b>", styles['Normal']))
             story.append(Paragraph(history_data['notes'], styles['Normal']))
             story.append(Spacer(1, 12))
         
-        # Footer
         PDFExportService._add_footer(story)
         
         doc.build(story)
@@ -1457,11 +1367,9 @@ class PDFExportService:
         styles = getSampleStyleSheet()
         story = []
         
-        # Get user data
         user = UserService.get_by_id(user_id)
         notes = EmergencyNotesService.get(user_id)
         
-        # Header - make this one stand out more
         story.append(Paragraph("EMERGENCY MEDICAL INFORMATION", styles['Title']))
         story.append(Spacer(1, 12))
         story.append(Paragraph(f"Patient: {user.get('name', '')}", styles['Heading2']))
@@ -1469,7 +1377,6 @@ class PDFExportService:
             story.append(Paragraph(f"{user['age']} year old {user['gender']}", styles['Heading3']))
         story.append(Spacer(1, 12))
         
-        # Critical Information
         story.append(Paragraph("Critical Information", styles['Heading2']))
         
         if notes:
@@ -1499,7 +1406,6 @@ class PDFExportService:
                     styles['Normal']
                 ))
         
-        # Emergency Contacts
         if notes and notes.get('emergency_contacts'):
             story.append(Paragraph("Emergency Contacts", styles['Heading2']))
             story.append(Paragraph(
@@ -1507,7 +1413,6 @@ class PDFExportService:
                 styles['Normal']
             ))
         
-        # Footer with big warning
         story.append(Spacer(1, 24))
         story.append(Paragraph(
             "IN CASE OF EMERGENCY, PLEASE PROVIDE THIS DOCUMENT TO MEDICAL PERSONNEL",
@@ -1571,10 +1476,8 @@ def export_all_lab_reports():
     styles = getSampleStyleSheet()
     story = []
     
-    # Header
     PDFExportService._add_header(story, "All Lab Reports", user)
     
-    # Add each report
     for report in reports:
         date_str = report['date'].strftime('%b %d, %Y') if report.get('date') else 'No date'
         story.append(Paragraph(
@@ -1609,10 +1512,8 @@ def export_all_medical_history():
     styles = getSampleStyleSheet()
     story = []
     
-    # Header
     PDFExportService._add_header(story, "Complete Medical History", user)
     
-    # Add each entry
     for entry in history:
         date_str = entry['date'].strftime('%b %d, %Y') if entry.get('date') else 'No date'
         story.append(Paragraph(
@@ -1646,7 +1547,6 @@ def download_medical_history_attachment(entry_id):
         flash('File not found', 'error')
         return redirect(url_for('medical_history_list'))
     
-    # Add the medical_history subfolder to the path
     filepath = os.path.join(app.config['UPLOAD_FOLDER'], 'medical_history', entry['filename'])
     
     if not os.path.exists(filepath):
@@ -1719,13 +1619,11 @@ def view_lab_report_attachment(report_id):
         flash('File no longer available', 'error')
         return redirect(url_for('lab_reports_list'))
     
-    # For images and PDFs, we can display them in the browser
     file_ext = report['filename'].split('.')[-1].lower()
     
     if file_ext in ['png', 'jpg', 'jpeg', 'pdf']:
         return send_file(filepath)
     else:
-        # For other file types, force download
         return send_file(
             filepath,
             as_attachment=True,
@@ -1769,14 +1667,11 @@ def view_medication_attachment(med_id):
     if not os.path.exists(filepath):
         flash('File no longer available', 'error')
         return redirect(url_for('medications_list'))
-    
-    # For images and PDFs, we can display them in the browser
     file_ext = medication['attachment'].split('.')[-1].lower()
     
     if file_ext in ['png', 'jpg', 'jpeg', 'pdf']:
         return send_file(filepath)
     else:
-        # For other file types, force download
         return send_file(
             filepath,
             as_attachment=True,
@@ -1790,26 +1685,149 @@ def api_health_recommendations():
     user = UserService.get_by_id(user_id)
     
     if not user.get('age') or not user.get('gender'):
-        return jsonify({'success': False, 'error': 'Incomplete profile'})
+        return jsonify({
+            'success': False, 
+            'error': 'Please complete your profile to get recommendations'
+        })
     
     try:
-        model = genai.GenerativeModel('gemini-pro')
+        genai.configure(api_key=os.getenv('GEMINI_API_KEY'))
+        model = genai.GenerativeModel('gemini-1.5-pro-latest')
+        
         prompt = f"""
-        Suggest 4-6 health screening tests for a {user['age']} year old {user['gender']}.
-        For each test, provide:
-        - A short name (max 3 words)
-        - Brief description (1 sentence)
-        - Recommended frequency (e.g., 'annually')
+        As a medical expert, suggest personalized health screening tests for:
+        - Age: {user['age']}
+        - Gender: {user.get('gender', 'unknown')}
+        - Weight: {user.get('weight', 'unknown')} kg
         
-        Return as JSON with 'suggestions' array containing objects with these fields:
-        name, description, frequency
+        For each recommendation, provide:
+        - Clear test name
+        - Brief medical justification
+        - Recommended frequency
+        - Appropriate category (from: {[e.value for e in RecommendationCategory]})
+        - Priority level (high/medium/low)
         """
-        response = model.generate_content(prompt)
-        suggestions = json.loads(response.text).get('suggestions', [])
         
-        return jsonify({'success': True, 'suggestions': suggestions})
+        response = model.generate_content(
+            prompt,
+            generation_config={
+                "response_mime_type": "application/json",
+                "response_schema": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "name": {"type": "string"},
+                            "description": {"type": "string"},
+                            "frequency": {"type": "string"},
+                            "category": {"type": "string", "enum": [e.value for e in RecommendationCategory]},
+                            "priority": {"type": "string", "enum": [e.value for e in RecommendationPriority]}
+                        },
+                        "required": ["name", "description", "frequency", "category", "priority"]
+                    }
+                }
+            }
+        )
+        
+        try:
+            recommendations = [HealthRecommendation(**rec) for rec in response.parsed]
+            return jsonify({
+                'success': True,
+                'recommendations': [rec.dict() for rec in recommendations]
+            })
+        except Exception as e:
+            return jsonify({
+                'success': False,
+                'error': f'Failed to parse recommendations: {str(e)}',
+                'raw_response': response.text
+            })
+            
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)})
+        return jsonify({
+            'success': False, 
+            'error': str(e)
+        })
+
+@app.route('/emergency-notes/delete-file', methods=['POST'])
+@login_required
+def emergency_notes_delete_file():
+    user_id = session['user']['_id']
+    filename = request.form.get('filename')
+    
+    if not filename:
+        flash('No filename provided', 'error')
+        return redirect(url_for('emergency_notes'))
+    
+    if EmergencyNotesService.delete_file(user_id, filename):
+        flash('File deleted successfully', 'success')
+    else:
+        flash('File not found or could not be deleted', 'error')
+    
+    return redirect(url_for('emergency_notes'))
+
+@app.route('/emergency-notes/share', methods=['POST'])
+@login_required
+def emergency_notes_share():
+    user_id = session['user']['_id']
+    email = request.form.get('email')
+    
+    if not email:
+        flash('Email address is required', 'error')
+        return redirect(url_for('emergency_notes'))
+    
+    pdf_buffer = PDFExportService.generate_emergency_info_pdf(user_id)
+    pdf_buffer.seek(0)
+    
+    user = UserService.get_by_id(user_id)
+    subject = f"Emergency Medical Information for {user.get('name', '')}"
+    body = f"""Please find attached the emergency medical information for {user.get('name', '')}.
+
+This information should be used in case of emergency by medical personnel.
+
+--
+Sent via Kobatela Health"""
+    
+    mailto_link = f"mailto:{email}?subject={subject}&body={body}"
+    
+    flash(f'Click to share your emergency info with {email}', 'success')
+    return render_template('emergency_notes/view.html', 
+                         notes=EmergencyNotesService.get(user_id),
+                         mailto_link=mailto_link)
+
+@app.route('/emergency-notes', methods=['GET', 'POST'])
+@login_required
+def emergency_notes():
+    user_id = session['user']['_id']
+    notes = EmergencyNotesService.get(user_id)
+    
+    if request.method == 'POST':
+        files = []
+        if 'files' in request.files:
+            for file in request.files.getlist('files'):
+                if file and allowed_file(file.filename):
+                    filename = secure_filename(f"{user_id}_{datetime.now().timestamp()}.{file.filename.rsplit('.', 1)[1].lower()}")
+                    os.makedirs(os.path.join(app.config['UPLOAD_FOLDER'], 'emergency'), exist_ok=True)
+                    file.save(os.path.join(app.config['UPLOAD_FOLDER'], 'emergency', filename))
+                    files.append(filename)
+        
+        EmergencyNotesService.create_or_update(user_id, request.form, files)
+        flash('Emergency information updated successfully', 'success')
+        return redirect(url_for('emergency_notes'))
+    
+    return render_template('emergency_notes/view.html', notes=notes)
+
+@app.route('/export/emergency-info')
+@login_required
+def export_emergency_info():
+    user_id = session['user']['_id']
+    pdf_buffer = PDFExportService.generate_emergency_info_pdf(user_id)
+    
+    return send_file(
+        pdf_buffer,
+        as_attachment=True,
+        download_name=f"emergency_info_{datetime.now().strftime('%Y%m%d')}.pdf",
+        mimetype='application/pdf'
+    )
 
 if __name__ == '__main__':
     app.run(debug=True)

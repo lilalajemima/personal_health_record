@@ -38,9 +38,19 @@
                     <h6>Emergency Documents</h6>
                     <div class="list-group">
                         {% for file in notes.files %}
-                        <a href="{{ url_for('static', filename='uploads/emergency/' + file) }}" target="_blank" class="list-group-item list-group-item-action">
-                            <i class="fas fa-file me-2"></i> {{ file }}
-                        </a>
+                        <div class="list-group-item d-flex justify-content-between align-items-center">
+                            <div>
+                                <a href="{{ url_for('static', filename='uploads/emergency/' + file) }}" target="_blank">
+                                    <i class="fas fa-file me-2"></i> {{ file }}
+                                </a>
+                            </div>
+                            <form method="POST" action="{{ url_for('emergency_notes_delete_file') }}">
+                                <input type="hidden" name="filename" value="{{ file }}">
+                                <button type="submit" class="btn btn-sm btn-outline-danger">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </form>
+                        </div>
                         {% endfor %}
                     </div>
                 </div>
@@ -65,8 +75,7 @@
                             </tr>
                         </thead>
                         <tbody>
-                            {% for contact in notes.emergency_contacts.split('\n') %}
-                            {% if contact %}
+                            {% for contact in notes.emergency_contacts.split('\n') if contact %}
                             {% set parts = contact.split('|') %}
                             <tr>
                                 <td>{{ parts[0] }}</td>
@@ -74,7 +83,6 @@
                                 <td>{{ parts[2] if parts|length > 2 else '' }}</td>
                                 <td>{{ parts[3] if parts|length > 3 else '' }}</td>
                             </tr>
-                            {% endif %}
                             {% endfor %}
                         </tbody>
                     </table>
@@ -89,51 +97,41 @@
     <div class="col-lg-4">
         <div class="card">
             <div class="card-header">
-                <h5 class="card-title mb-0">Family Access</h5>
+                <h5 class="card-title mb-0">Share Emergency Info</h5>
             </div>
             <div class="card-body">
-                {% if family %}
-                <ul class="list-group list-group-flush">
-                    {% for member in family %}
-                    <li class="list-group-item d-flex justify-content-between align-items-center">
-                        <div>
-                            <h6 class="mb-0">{{ member.name }}</h6>
-                            <small class="text-muted">{{ member.relation }}</small>
-                        </div>
-                        <form method="POST" action="{{ url_for('family_members_delete', member_id=member._id) }}" class="d-inline">
-                            <button type="submit" class="btn btn-sm btn-outline-danger">
-                                <i class="fas fa-trash"></i>
-                            </button>
-                        </form>
-                    </li>
-                    {% endfor %}
-                </ul>
-                {% else %}
-                <p class="text-muted">No family members added</p>
+                {% if notes %}
+                <form method="POST" action="{{ url_for('emergency_notes_share') }}">
+                    <div class="mb-3">
+                        <label class="form-label">Email Address</label>
+                        <input type="email" class="form-control" name="email" placeholder="Recipient's email" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary w-100">
+                        <i class="fas fa-share"></i> Share via Email
+                    </button>
+                </form>
+                
+                {% if mailto_link %}
+                <div class="mt-3 alert alert-success">
+                    <p>Click the button below to open your email client:</p>
+                    <a href="{{ mailto_link }}" class="btn btn-success w-100">
+                        <i class="fas fa-envelope"></i> Open Email
+                    </a>
+                </div>
                 {% endif %}
                 
                 <hr>
                 
-                <form method="POST" class="mt-3">
-                    <div class="mb-3">
-                        <label class="form-label">Add Family Member</label>
-                        <input type="email" class="form-control" name="email" placeholder="Family member's email" required>
-                    </div>
-                    <div class="row mb-3">
-                        <div class="col-md-6">
-                            <label class="form-label">Relationship</label>
-                            <input type="text" class="form-control" name="relation" required>
-                        </div>
-                        <div class="col-md-6">
-                            <label class="form-label">Access Level</label>
-                            <select class="form-select" name="access_level" required>
-                                <option value="view_emergency">View Emergency Info</option>
-                                <option value="view_all">View All Records</option>
-                            </select>
-                        </div>
-                    </div>
-                    <button type="submit" class="btn btn-primary w-100">Add Family Member</button>
-                </form>
+                <div class="mt-3">
+                    <a href="{{ url_for('export_emergency_info') }}" class="btn btn-outline-primary w-100">
+                        <i class="fas fa-download"></i> Download PDF
+                    </a>
+                </div>
+                {% else %}
+                <div class="alert alert-info">
+                    <p>Please add your emergency information first to enable sharing and exporting.</p>
+                </div>
+                {% endif %}
             </div>
         </div>
     </div>
@@ -147,7 +145,7 @@
                 <h5 class="modal-title">Edit Emergency Information</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
-            <form method="POST" enctype="multipart/form-data">
+            <form method="POST" enctype="multipart/form-data" action="{{ url_for('emergency_notes') }}">
                 <div class="modal-body">
                     <div class="row mb-3">
                         <div class="col-md-4">
@@ -197,4 +195,5 @@
         </div>
     </div>
 </div>
+
 {% endblock %}

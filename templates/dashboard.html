@@ -4,6 +4,16 @@
 
 {% block extra_css %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
+<style>
+    .priority-badge {
+        font-size: 0.75rem;
+    }
+    .category-badge {
+        font-size: 0.7rem;
+        background-color: #e9ecef;
+        color: #495057;
+    }
+</style>
 {% endblock %}
 
 {% block content %}
@@ -36,7 +46,7 @@
                             <div class="stat-info">
                                 <h3>{{ med_count }}</h3>
                                 <p>Active Medications</p>
-                                <a href="{{ url_for('medications_list') }}" class="btn btn-sm btn-outline-primary">View All</a>
+                                <a href="{{ url_for('medications_list') }}" class="btn btn-sm btn-outline-secondary">View All</a>
                             </div>
                         </div>
                     </div>
@@ -48,7 +58,7 @@
                             <div class="stat-info">
                                 <h3>{% if next_vaccine %}1{% else %}0{% endif %}</h3>
                                 <p>Upcoming Vaccines</p>
-                                <a href="{{ url_for('vaccines_list') }}" class="btn btn-sm btn-outline-success">View All</a>
+                                <a href="{{ url_for('vaccines_list') }}" class="btn btn-sm btn-outline-secondary">View All</a>
                             </div>
                         </div>
                     </div>
@@ -64,31 +74,42 @@
                     <i class="fas fa-sync-alt"></i> Refresh
                 </button>
             </div>
-            <div class="card-body">
-                {% if suggestions %}
+            <div class="card-body" id="recommendations-container">
+                {% if recommendations %}
                 <div class="alert alert-info">
                     <i class="fas fa-info-circle me-2"></i>
-                    These AI-generated suggestions are based on your profile (Age: {{ session.user.age or 'N/A' }}, 
-                    Gender: {{ session.user.gender or 'N/A' }}). Always consult with your healthcare provider.
+                    These AI-generated suggestions are based on your profile 
+                    (Age: {{ session.user.age or 'N/A' }}, 
+                    Gender: {{ session.user.gender or 'N/A' }},
+                    Weight: {{ session.user.weight or 'N/A' }} kg).
+                    Always consult with your healthcare provider.
                 </div>
                 
                 <div class="row">
-                    {% for suggestion in suggestions %}
+                    {% for rec in recommendations %}
                     <div class="col-md-6 mb-3">
                         <div class="card h-100">
                             <div class="card-body">
-                                <h6>{{ suggestion.name }}</h6>
-                                <p class="text-muted small">{{ suggestion.description }}</p>
-                                <div class="d-flex justify-content-between align-items-center">
+                                <div class="d-flex justify-content-between align-items-start mb-2">
+                                    <h6>{{ rec.name }}</h6>
+                                    <span class="badge priority-badge bg-{% if rec.priority == 'high' %}danger{% elif rec.priority == 'medium' %}warning{% else %}info{% endif %}">
+                                        {{ rec.priority|capitalize }}
+                                    </span>
+                                </div>
+                                <p class="text-muted small mb-3">{{ rec.description }}</p>
+                                <div class="d-flex align-items-center mb-2">
+                                    <span class="badge category-badge me-2">
+                                        {{ rec.category|replace('_', ' ')|title }}
+                                    </span>
                                     <small class="text-primary">
                                         <i class="fas fa-calendar-alt me-1"></i>
-                                        Frequency: {{ suggestion.frequency }}
+                                        {{ rec.frequency }}
                                     </small>
-                                    <button class="btn btn-sm btn-outline-primary" 
-                                            onclick="addReminder('{{ suggestion.name }}')">
-                                        <i class="fas fa-bell"></i> Remind
-                                    </button>
                                 </div>
+                                <button class="btn btn-sm btn-outline-primary w-100 mt-2" 
+                                        onclick="addReminder('{{ rec.name }}')">
+                                    <i class="fas fa-bell me-1"></i> Set Reminder
+                                </button>
                             </div>
                         </div>
                     </div>
@@ -98,10 +119,16 @@
                 <div class="text-center py-3">
                     <i class="fas fa-robot fa-2x text-muted mb-3"></i>
                     <p>No recommendations available</p>
-                    <p class="text-muted small">Complete your profile to get personalized health test suggestions</p>
-                    <a href="{{ url_for('profile') }}" class="btn btn-sm btn-primary">
-                        <i class="fas fa-user-edit"></i> Update Profile
-                    </a>
+                    <p class="text-muted small">
+                        {% if not session.user.age or not session.user.gender %}
+                            Complete your profile to get personalized health test suggestions
+                            <a href="{{ url_for('profile') }}" class="btn btn-sm btn-primary mt-2">
+                                <i class="fas fa-user-edit"></i> Update Profile
+                            </a>
+                        {% else %}
+                            Could not generate recommendations at this time
+                        {% endif %}
+                    </p>
                 </div>
                 {% endif %}
                 
@@ -214,9 +241,10 @@
 {% block extra_js %}
 <script>
 function refreshRecommendations() {
-    // Show loading state
-    const cardBody = document.querySelector('.card-body');
-    cardBody.innerHTML = `
+    const container = document.getElementById('recommendations-container');
+    
+    
+    container.innerHTML = `
         <div class="text-center py-4">
             <div class="spinner-border text-primary" role="status">
                 <span class="visually-hidden">Loading...</span>
@@ -225,39 +253,48 @@ function refreshRecommendations() {
         </div>
     `;
     
-    // Fetch new recommendations
+    
     fetch('{{ url_for("api_health_recommendations") }}')
-        .then(response => response.json())
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('Network response was not ok');
+            }
+            return response.json();
+        })
         .then(data => {
-            if (data.success && data.suggestions.length > 0) {
-                // Reload the page to show new recommendations
+            if (data.success) {
+                
                 window.location.reload();
             } else {
-                cardBody.innerHTML = `
-                    <div class="alert alert-warning">
-                        Could not generate new recommendations. Please try again later.
+                container.innerHTML = `
+                    <div class="alert alert-danger">
+                        <i class="fas fa-exclamation-circle me-2"></i>
+                        ${data.error || 'Could not generate recommendations'}
                     </div>
-                    <button onclick="window.location.reload()" class="btn btn-primary">
-                        <i class="fas fa-undo"></i> Go Back
-                    </button>
+                    <div class="text-center">
+                        <button onclick="window.location.reload()" class="btn btn-primary">
+                            <i class="fas fa-undo"></i> Try Again
+                        </button>
+                    </div>
                 `;
             }
         })
         .catch(error => {
-            console.error('Error:', error);
-            cardBody.innerHTML = `
+            container.innerHTML = `
                 <div class="alert alert-danger">
-                    Error fetching recommendations. Please try again.
+                    <i class="fas fa-exclamation-circle me-2"></i>
+                    Error: ${error.message || 'Failed to fetch recommendations'}
                 </div>
-                <button onclick="window.location.reload()" class="btn btn-primary">
-                    <i class="fas fa-undo"></i> Go Back
-                </button>
+                <div class="text-center">
+                    <button onclick="window.location.reload()" class="btn btn-primary">
+                        <i class="fas fa-undo"></i> Try Again
+                    </button>
+                </div>
             `;
         });
 }
 
 function addReminder(testName) {
-    // Pre-fill the reminder modal with test information
     const modal = new bootstrap.Modal(document.getElementById('addReminderModal'));
     const titleInput = document.querySelector('#addReminderModal input[name="title"]');
     const notesInput = document.querySelector('#addReminderModal textarea[name="notes"]');
@@ -265,7 +302,6 @@ function addReminder(testName) {
     titleInput.value = `Schedule ${testName} test`;
     notesInput.value = `Recommended health test: ${testName}\n\nConsult with your doctor about this test.`;
     
-    // Calculate a date 6 months from now
     const futureDate = new Date();
     futureDate.setMonth(futureDate.getMonth() + 6);
     const dateStr = futureDate.toISOString().split('T')[0];
